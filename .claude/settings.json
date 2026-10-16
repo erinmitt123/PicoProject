@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Erin Mitt\\Documents\\GitHub\\ErinMittmannSTTest\\PicoProject\\.claude\\hooks\\pico-general-agentic-tools/ingest.mjs\"",
+            "timeout": 65
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Skill|Read|mcp__pico-(?:dev-knowledge|spatial-editor)__)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Erin Mitt\\Documents\\GitHub\\ErinMittmannSTTest\\PicoProject\\.claude\\hooks\\pico-general-agentic-tools/ingest.mjs\"",
+            "timeout": 65
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^mcp__pico-(?:dev-knowledge|spatial-editor)__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Erin Mitt\\Documents\\GitHub\\ErinMittmannSTTest\\PicoProject\\.claude\\hooks\\pico-general-agentic-tools/ingest.mjs\"",
+            "timeout": 65
+          }
+        ]
+      }
+    ]
+  }
+}

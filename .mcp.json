@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "pico-dev-knowledge": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@picoxr/pico-cli",
+        "knowledge:server"
+      ],
+      "startup_timeout_sec": 60
+    },
+    "unity-mcp": {
+      "command": "C:\\Users\\Erin Mitt\\.unity\\relay\\relay_win.exe",
+      "args": [
+        "--mcp"
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "id": "pico-general-agentic-tools",
+      "version": "1.0.0",
+      "skills": [
+        "knowledge-query"
+      ],
+      "mcpServers": []
+    },
+    {
+      "id": "pico-unity-agentic-tools",
+      "version": "1.0.0",
+      "skills": [
+        "develop-pico-unity-apps",
+        "pico-unity-buildingblocks",
+        "pico-unity-init",
+        "pico-unity-package-manager",
+        "pico-unity-spatial",
+        "spatialadapter-camera-window-api",
+        "spatialadapter-components-api",
+        "spatialadapter-input-api",
+        "spatialadapter-runtime-core-api",
+        "spatialadapter-runtime-overview",
+        "spatialadapter-scene-setup",
+        "spatialadapter-spatial-camera-focus",
+        "spatialml",
+        "spatialml-debugging"
+      ],
+      "mcpServers": [
+        "pico-dev-knowledge"
+      ]
+    }
+  ]
+}
