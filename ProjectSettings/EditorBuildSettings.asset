@@ -6,8 +6,17 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/PaletteRoom.unity
+    guid: 722fb016a3c4dfd46894f0262b96a87e
+  - enabled: 1
+    path: Assets/Scenes/InteractablesTest.unity
+    guid: 60bb9ef8010a89d4fba48ddcc9f9f3e1
+  - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
   m_configObjects:
+    ByteDance.PICO.XR.Settings: {fileID: 11400000, guid: 0427140a6bfd6494e8467dac7408f6d0, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 90c6d8ef4525abc488265bcaa09c73a6, type: 2}
+    xr.sdk.mock-hmd.settings: {fileID: 11400000, guid: f1606cc1b6c186b4c8fe95f4b46b306f, type: 2}
   m_UseUCBPForAssetBundles: 0

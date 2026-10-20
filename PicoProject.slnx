@@ -1,4 +1,24 @@
 ﻿<Solution>
-  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="ByteDance.PICO.XR.csproj" />
+  <Project Path="ByteDance.PICO.SptatialUI.csproj" />
+  <Project Path="ByteDance.PICO.IconConfigurator.Editor.csproj" />
+  <Project Path="ByteDance.PICO.XR.Editor.csproj" />
+  <Project Path="ByteDance.PICO.Platform.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.Hands.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="ByteDance.PICO.Enterprise.csproj" />
+  <Project Path="ByteDance.PICO.Platform.Editor.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.StarterAssets.csproj" />
+  <Project Path="ByteDance.PICO.Debugger.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="ByteDance.PICO.XR.Spatializer.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.Hands.Editor.csproj" />
+  <Project Path="ByteDance.PICO.XR.Spatializer.Example.csproj" />
+  <Project Path="ByteDance.PICO.XR.Spatializer.Editor.csproj" />
+  <Project Path="ByteDance.PICO.Interaction.csproj" />
+  <Project Path="ByteDance.PICO.CameraPack.csproj" />
+  <Project Path="ByteDance.PICO.CameraPack.Editor.csproj" />
+  <Project Path="ByteDance.PICO.Spatial.Stage.csproj" />
+  <Project Path="Unity.XR.Hands.Samples.VisualizerSample.csproj" />
+  <Project Path="Unity.XR.Interaction.Toolkit.Samples.StarterAssets.Editor.csproj" />
 </Solution>
