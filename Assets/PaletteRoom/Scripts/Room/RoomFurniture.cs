@@ -16,6 +16,8 @@ namespace PaletteRoom
         [SerializeField] FurnitureLibrary library;
         [Tooltip("Plain URP Lit material, used if the library is missing anything.")]
         [SerializeField] Material baseMaterial;
+        [Tooltip("Real-room walls and furniture from plane detection; pieces are placed around them.")]
+        [SerializeField] SceneObstacles sceneObstacles;
         [Tooltip("Distance from the user to the sample room's centre line.")]
         [SerializeField] float distanceFromUser = 1.9f;
         [Tooltip("Distance in front of the user where shopping-list items appear.")]
@@ -66,6 +68,14 @@ namespace PaletteRoom
 
         FurnitureFactory Factory => m_Factory ?? (m_Factory = new FurnitureFactory(library, baseMaterial));
 
+        void Awake()
+        {
+            if (sceneObstacles == null)
+                sceneObstacles = FindFirstObjectByType<SceneObstacles>();
+        }
+
+        bool BehindWall(Vector3 user, Vector3 point) => sceneObstacles != null && sceneObstacles.WallBetween(user, point);
+
         /// <summary>How many pieces of <paramref name="kind"/> are placed; a <paramref name="variantId"/> narrows it to one size.</summary>
         public int Count(FurnitureKind kind, string variantId = null)
         {
@@ -99,10 +109,11 @@ namespace PaletteRoom
                     item.transform.localRotation *= Quaternion.Euler(-15f, 0f, 0f); // lean back into the sofa
                 if (p.kind == FurnitureKind.Bookshelf)
                     bookshelf = item;
-                // Safety net: if a model's size ever makes the layout collide, nudge to the nearest free spot.
+                // Fit the layout to the real room: anything that collides (with other pieces, walls or real
+                // furniture) or lands on the far side of a wall moves to the nearest free spot.
                 var pose = item.transform;
-                if (item.BlocksFloor && !IsFree(item, pose.position, pose.rotation)
-                    && TryFindFreeSpot(item, pose.position, pose.rotation, head.position, out var spot))
+                bool misplaced = !IsFree(item, pose.position, pose.rotation) || BehindWall(head.position, pose.position);
+                if (misplaced && TryFindFreeSpot(item, pose.position, pose.rotation, head.position, out var spot))
                     pose.position = spot;
                 added.Add(item);
                 m_Items.Add(item);
@@ -159,6 +170,16 @@ namespace PaletteRoom
                 if (FurnitureItem.Overlap(footprints, other.CurrentFootprints))
                     return false;
             }
+            // The real room: nothing goes through a wall, and virtual pieces stand around real furniture.
+            if (sceneObstacles != null)
+            {
+                foreach (var wall in sceneObstacles.Walls)
+                    if (FurnitureItem.Overlap(footprints, new[] { wall }))
+                        return false;
+                foreach (var real in sceneObstacles.Furniture)
+                    if (FurnitureItem.Overlap(footprints, new[] { real }))
+                        return false;
+            }
             return true;
         }
 
@@ -180,7 +201,7 @@ namespace PaletteRoom
                     float fromUser = Vector2.Distance(user, new Vector2(candidate.x, candidate.z));
                     if (fromUser < minFromUser || fromUser > maxFromUser)
                         continue;
-                    if (IsFree(item, candidate, rotation))
+                    if (IsFree(item, candidate, rotation) && !BehindWall(userPosition, candidate))
                     {
                         spot = candidate;
                         return true;

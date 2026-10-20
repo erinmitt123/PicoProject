@@ -25,25 +25,86 @@ MonoBehaviour:
     prefab: {fileID: 5239280840760274227, guid: fb9c03032cf456343b9ea726d2d02d51, type: 3}
   icons:
   - kind: 0
-    icon: {fileID: -6288179971597629913, guid: e03c3f062e9a1874ba2c879a511c9e8f, type: 3}
+    variantId: loveseat
+    icon: {fileID: -888484094451544820, guid: f61db0a7ec6b7e74ca897199df47d828, type: 3}
+  - kind: 0
+    variantId: three
+    icon: {fileID: -3395855268142932092, guid: cafec15742592b34db6b5083282e1900, type: 3}
+  - kind: 0
+    variantId: chaise
+    icon: {fileID: -3688244800366164817, guid: 15ce90bfac70c324db575ce91c36e6e6, type: 3}
   - kind: 3
-    icon: {fileID: 3006543129663489866, guid: a42b4f5f06b09be4a82dfeb77a07a792, type: 3}
+    variantId: 4x6
+    icon: {fileID: 5493272268539076030, guid: c6cf3a6da3b54544faa3a2204f6601cb, type: 3}
+  - kind: 3
+    variantId: 5x8
+    icon: {fileID: 3703195050310991628, guid: 447897e1841e8644895fa213b03604d0, type: 3}
+  - kind: 3
+    variantId: 8x10
+    icon: {fileID: 8351324720162280206, guid: 952492a0f80001549afd62f43508137e, type: 3}
   - kind: 1
-    icon: {fileID: 884820780105877664, guid: 87d6bfc11148e2e408dadd141d0247e6, type: 3}
+    variantId: standard
+    icon: {fileID: 3923885345027135322, guid: bfe29e262fe42584e85659a587d50fb1, type: 3}
   - kind: 2
-    icon: {fileID: 3950710004533796319, guid: d9a61561fe31c904586a21955078f131, type: 3}
+    variantId: small
+    icon: {fileID: -2112400885132781314, guid: 865fc4d0edfa27c47bbff9eaa09a9770, type: 3}
+  - kind: 2
+    variantId: medium
+    icon: {fileID: -4132566050719171922, guid: 9173d241573c7124cb3997a55816454d, type: 3}
+  - kind: 2
+    variantId: large
+    icon: {fileID: -2856279852488232413, guid: a8322ee281df2c04faba3d09c9fb5f90, type: 3}
   - kind: 6
-    icon: {fileID: -8174865062497381088, guid: 45dba931dc9087741910d034e3cdf2f2, type: 3}
+    variantId: 2x2
+    icon: {fileID: 5966616958781404340, guid: f96080292f60bb64f830b1fdee04564a, type: 3}
+  - kind: 6
+    variantId: 2x3
+    icon: {fileID: 372313435567611959, guid: 9ec717c59655d7a46b0609d09b1b16f0, type: 3}
+  - kind: 6
+    variantId: 2x4
+    icon: {fileID: -5559987236176338516, guid: 4025a81a668c42a48bbf928dd916ed45, type: 3}
+  - kind: 6
+    variantId: 4x2
+    icon: {fileID: 7418124811161838388, guid: 178d946df86c95f4a9e7ff12997cb3c3, type: 3}
   - kind: 5
-    icon: {fileID: 812954139885422805, guid: 85a9be7a33e982a4da47f814b5f3f7e0, type: 3}
+    variantId: compact
+    icon: {fileID: -1197547608258870604, guid: 0511104c85580f144bbad83c0df77abf, type: 3}
+  - kind: 5
+    variantId: standard
+    icon: {fileID: -2271887110717442614, guid: d7974a19e452cae4ca4d6ddccb32e660, type: 3}
+  - kind: 5
+    variantId: tall
+    icon: {fileID: 5947126571487625808, guid: d08767c440a00614f9afe0e494882500, type: 3}
   - kind: 4
-    icon: {fileID: -8587829966666025713, guid: c3b0936f6496a4e4ab2b08167ce88c1e, type: 3}
+    variantId: tripod
+    icon: {fileID: 5568842884941739902, guid: db3494e02fa872649aa49204508d0654, type: 3}
   - kind: 7
-    icon: {fileID: 906388131340123023, guid: 3d5f35b76af905241ad5521dc6c4421b, type: 3}
+    variantId: small
+    icon: {fileID: -4364837046140494234, guid: 752fbb14ce4237e47a8fa0daa36ccdd7, type: 3}
+  - kind: 7
+    variantId: medium
+    icon: {fileID: -6156166257965315041, guid: 57b4ee09868c2fc4e8059b2610d00531, type: 3}
+  - kind: 7
+    variantId: large
+    icon: {fileID: 7134287180394501352, guid: 1bd731ffdcedb5046b090072f525ec22, type: 3}
   - kind: 8
-    icon: {fileID: -4543851916849805683, guid: 8e9c9d0528f359b4ea9dcef13fe0145a, type: 3}
+    variantId: a3
+    icon: {fileID: 6843895767676485384, guid: a4a2c43a391ac654e9250435f6e9d071, type: 3}
+  - kind: 8
+    variantId: a2
+    icon: {fileID: 7627813769363983591, guid: b586f477cdde04f42a37239550ea659f, type: 3}
+  - kind: 8
+    variantId: a1
+    icon: {fileID: 6933561214874428176, guid: 852fa3fc34757ce49867700cbbb36d35, type: 3}
   - kind: 9
-    icon: {fileID: 1143404911002820367, guid: de7427b3354e0554aa80caec6c6ffe85, type: 3}
+    variantId: square
+    icon: {fileID: -6921899933082487040, guid: 56b6dfb63de6a8747b2a6abe4dfc014a, type: 3}
+  - kind: 9
+    variantId: large
+    icon: {fileID: -4810051262227498036, guid: 21ff7a89669654942afc9ee7fd578a2e, type: 3}
+  - kind: 9
+    variantId: lumbar
+    icon: {fileID: 8850825924698455401, guid: 2420eb4583a59fe42b7ffbe4f4b390e0, type: 3}
   upholstery: {fileID: 2100000, guid: 1a7afd8ff1165a64f8fc3549134128b1, type: 2}
   rugWeave: {fileID: 2100000, guid: c2ba80e218abe9d49975bba966f8e4c1, type: 2}
   paint: {fileID: 2100000, guid: 8f774cc909c9aa44d8b9ef54a4a6dcb1, type: 2}

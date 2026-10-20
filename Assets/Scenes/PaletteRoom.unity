@@ -302,7 +302,6 @@ GameObject:
   m_Component:
   - component: {fileID: 507657088}
   - component: {fileID: 507657086}
-  - component: {fileID: 507657087}
   m_Layer: 0
   m_Name: Palette Dock
   m_TagString: Untagged
@@ -322,23 +321,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5ede191ebd5a1424698fd31bcddf9887, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PaletteRoom.PaletteDock
---- !u!114 &507657087
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 507657085}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 26bb00714a56365479c07a51748d15b1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PaletteRoom.HandDockFollower
-  head: {fileID: 0}
-  aboveHand: 0.16
-  minDistanceFromHead: 0.5
-  moveThreshold: 0.1
-  smoothTime: 0.25
 --- !u!4 &507657088
 Transform:
   m_ObjectHideFlags: 0
@@ -385,6 +367,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PaletteRoom.SampleRoom
   library: {fileID: 11400000, guid: b795877bedd2c3b49a7d475185a217a4, type: 2}
   baseMaterial: {fileID: 2100000, guid: afd0ebdcb055a0d46b482e09afca21da, type: 2}
+  sceneObstacles: {fileID: 1365378905}
   distanceFromUser: 1.9
   addDistance: 1.3
   dropHeight: 0.35
@@ -714,6 +697,7 @@ GameObject:
   - component: {fileID: 1365378902}
   - component: {fileID: 1365378901}
   - component: {fileID: 1365378900}
+  - component: {fileID: 1365378905}
   m_Layer: 0
   m_Name: Palette Room
   m_TagString: Untagged
@@ -808,6 +792,22 @@ Transform:
   - {fileID: 1676339555}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1365378905
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1365378899}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c61aa6c5ddd9464b831edb255012562, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PaletteRoom.SceneObstacles
+  xrOrigin: {fileID: 0}
+  floor: {fileID: 0}
+  minObstacleHeight: 0.12
+  wallThickness: 0.06
 --- !u!1001 &1421788661
 PrefabInstance:
   m_ObjectHideFlags: 0

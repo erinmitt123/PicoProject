@@ -20,10 +20,16 @@ namespace PaletteRoom
         public ColorPalette Current => m_Current ?? PalettePresets.Default;
         public IReadOnlyList<FurnitureItem> Items => m_Items;
 
-        /// <summary>The user's palette from the color wheel, or null until they make one.</summary>
-        public ColorPalette Custom { get; private set; }
+        readonly List<ColorPalette> m_Customs = new List<ColorPalette>();
+
+        /// <summary>Palettes the user made on the color wheel, oldest first.</summary>
+        public IReadOnlyList<ColorPalette> Customs => m_Customs;
+
+        /// <summary>The user's most recent palette, or null until they make one.</summary>
+        public ColorPalette Custom => m_Customs.Count > 0 ? m_Customs[m_Customs.Count - 1] : null;
 
         public event Action<ColorPalette> PaletteChanged;
+        /// <summary>Raised when the user saves a new palette.</summary>
         public event Action<ColorPalette> CustomPaletteChanged;
 
         void Awake()
@@ -55,14 +61,15 @@ namespace PaletteRoom
 
         public void Unregister(FurnitureItem item) => m_Items.Remove(item);
 
-        /// <summary>Stores <paramref name="palette"/> as the user's palette and restyles the room with it.</summary>
+        /// <summary>Saves <paramref name="palette"/> alongside the presets as "My palette N" and restyles the room with it.</summary>
         public void SetCustomPalette(ColorPalette palette)
         {
             if (palette == null)
                 return;
-            Custom = palette.Clone("My palette");
-            CustomPaletteChanged?.Invoke(Custom);
-            SetPalette(Custom);
+            var saved = palette.Clone($"My palette {m_Customs.Count + 1}");
+            m_Customs.Add(saved);
+            CustomPaletteChanged?.Invoke(saved);
+            SetPalette(saved);
         }
 
         /// <summary>Switches palettes; every paintable zone blends over <see cref="BlendDuration"/>.</summary>

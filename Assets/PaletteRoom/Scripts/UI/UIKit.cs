@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -156,6 +157,117 @@ namespace PaletteRoom
                 TextAlignmentOptions.Center, FontStyles.Bold);
             Stretch(label.rectTransform, 6f);
             return button;
+        }
+
+        /// <summary>
+        /// A vertically scrolling grid inside <paramref name="parent"/> at the given rect (mm from the
+        /// parent's top-left). Drag anywhere in it (ray, poke or mouse) or grab the scrollbar to scroll.
+        /// Children added to the returned content are laid out by its GridLayoutGroup; inactive children
+        /// are skipped, so filtering is just toggling them.
+        /// </summary>
+        public static RectTransform ScrollGrid(Transform parent, string name, float x, float y, float width, float height,
+            Vector2 cell, float spacing, int columns)
+        {
+            const float barWidth = 8f, barGap = 6f;
+            var root = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            root.SetParent(parent, false);
+            Place(root, x, y, width, height);
+
+            var viewport = new GameObject("Viewport", typeof(RectTransform)).GetComponent<RectTransform>();
+            viewport.SetParent(root, false);
+            viewport.anchorMin = Vector2.zero;
+            viewport.anchorMax = Vector2.one;
+            viewport.pivot = new Vector2(0f, 1f);
+            viewport.offsetMin = Vector2.zero;
+            viewport.offsetMax = new Vector2(-(barWidth + barGap), 0f);
+            var hit = viewport.gameObject.AddComponent<Image>();
+            hit.color = Color.clear; // invisible, but catches drags in the gaps between items
+            viewport.gameObject.AddComponent<RectMask2D>();
+
+            var content = new GameObject("Content", typeof(RectTransform)).GetComponent<RectTransform>();
+            content.SetParent(viewport, false);
+            content.anchorMin = new Vector2(0f, 1f);
+            content.anchorMax = new Vector2(1f, 1f);
+            content.pivot = new Vector2(0.5f, 1f);
+            content.anchoredPosition = Vector2.zero;
+            content.sizeDelta = Vector2.zero;
+            var grid = content.gameObject.AddComponent<GridLayoutGroup>();
+            grid.cellSize = cell;
+            grid.spacing = new Vector2(spacing, spacing);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = columns;
+            grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+            grid.childAlignment = TextAnchor.UpperLeft;
+            content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var track = Panel(root, "Scrollbar", new Color(0f, 0f, 0f, 0.08f), barWidth / 2f);
+            track.rectTransform.anchorMin = new Vector2(1f, 0f);
+            track.rectTransform.anchorMax = new Vector2(1f, 1f);
+            track.rectTransform.pivot = new Vector2(1f, 0.5f);
+            track.rectTransform.sizeDelta = new Vector2(barWidth, 0f);
+            track.rectTransform.anchoredPosition = Vector2.zero;
+            var area = new GameObject("Sliding Area", typeof(RectTransform)).GetComponent<RectTransform>();
+            area.SetParent(track.transform, false);
+            Stretch(area);
+            var handle = Panel(area, "Handle", new Color(0.17f, 0.20f, 0.24f, 0.55f), barWidth / 2f);
+            Stretch(handle.rectTransform);
+            var scrollbar = track.gameObject.AddComponent<Scrollbar>();
+            scrollbar.handleRect = handle.rectTransform;
+            scrollbar.targetGraphic = handle;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+            var scroll = root.gameObject.AddComponent<ScrollRect>();
+            scroll.content = content;
+            scroll.viewport = viewport;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.inertia = true;
+            scroll.decelerationRate = 0.12f;
+            scroll.scrollSensitivity = 25f;
+            scroll.verticalScrollbar = scrollbar;
+            scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+            return content;
+        }
+
+        /// <summary>Lays chips out left-to-right, wrapping into rows; returns each chip's rect (mm) within the chip area.</summary>
+        public static List<Rect> FlowChips(IReadOnlyList<string> labels, float maxWidth, float chipHeight, float textSize, out float totalHeight)
+        {
+            const float gap = 6f;
+            float charWidth = textSize * 0.66f, padding = textSize * 2f;
+            var rects = new List<Rect>();
+            float x = 0f, y = 0f;
+            foreach (var label in labels)
+            {
+                float w = padding + label.Length * charWidth;
+                if (x > 0f && x + w > maxWidth)
+                {
+                    x = 0f;
+                    y += chipHeight + gap;
+                }
+                rects.Add(new Rect(x, y, w, chipHeight));
+                x += w + gap;
+            }
+            totalHeight = y + chipHeight;
+            return rects;
+        }
+
+        /// <summary>Shows a filter chip as selected (dark) or not (light).</summary>
+        public static void SetChipSelected(Button chip, bool selected)
+        {
+            chip.colors = selected ? PrimaryColors() : SecondaryColors();
+            var label = chip.GetComponentInChildren<TextMeshProUGUI>();
+            if (label == null)
+                return;
+            label.color = selected ? Color.white : TextColor;
+            // Chip labels stay on one line; long ones shrink a little rather than wrap.
+            if (!label.enableAutoSizing)
+            {
+                label.textWrappingMode = TextWrappingModes.NoWrap;
+                label.fontSizeMax = label.fontSize;
+                label.fontSizeMin = label.fontSize * 0.75f;
+                label.enableAutoSizing = true;
+            }
         }
 
         public static ColorBlock PrimaryColors() => new ColorBlock

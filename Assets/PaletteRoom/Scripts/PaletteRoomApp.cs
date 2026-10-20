@@ -34,6 +34,7 @@ namespace PaletteRoom
         FloorDetector m_Floor;
         FloorTapCalibrator m_Calibrator;
         Camera m_Camera;
+        MovablePanel m_DockPanel;
 
         bool TestModeActive => Application.isEditor && editorTestMode && !XRSettings.isDeviceActive;
 
@@ -56,16 +57,20 @@ namespace PaletteRoom
             welcomePanel.gameObject.SetActive(false);
 
             paletteDock.Build(m_Camera, m_Palettes, m_Calibrator);
-            paletteDock.GetComponent<HandDockFollower>().Configure(m_Camera.transform);
+            // World-anchored and grabbable; the menu button (M in the Editor) recalls it front-left.
+            m_DockPanel = AddMovable(paletteDock.gameObject, recallable: true);
+            m_DockPanel.SetRecallPose(0.7f, -30f, 0.2f);
             paletteDock.ColorWheelRequested += OpenColorWheel;
             paletteDock.ShoppingListRequested += OpenShoppingList;
             paletteDock.gameObject.SetActive(false);
 
             colorWheel.Build(m_Camera, m_Palettes);
+            AddMovable(colorWheel.gameObject, recallable: false);
             colorWheel.Closed += ShowDock;
             colorWheel.gameObject.SetActive(false);
 
             shoppingList.Build(m_Camera, m_Palettes, room);
+            AddMovable(shoppingList.gameObject, recallable: false);
             shoppingList.AddRequested += (kind, variant) => room.Add(kind, variant, m_Camera.transform, m_Floor.FloorY);
             shoppingList.Closed += ShowDock;
             shoppingList.gameObject.SetActive(false);
@@ -102,6 +107,14 @@ namespace PaletteRoom
             room.SpawnSampleRoom(m_Camera.transform, m_Floor.FloorY);
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
+            m_DockPanel.PlaceIfNeeded();
+        }
+
+        MovablePanel AddMovable(GameObject panel, bool recallable)
+        {
+            var movable = panel.AddComponent<MovablePanel>();
+            movable.Setup(m_Camera.transform, m_Camera, recallable);
+            return movable;
         }
 
         // One floating panel at a time keeps the view of the room clear. The dock sits closer to the

@@ -7,50 +7,36 @@ using UnityEngine.UI;
 namespace PaletteRoom
 {
     /// <summary>
-    /// The home catalog as a filterable, paged grid: one tile per size of each piece, with a baked
+    /// The home catalog as a filterable, scrolling grid: one tile per size of each piece, with a baked
     /// picture, its size, its 60-30-10 role color, how many are in the room, and add/remove buttons.
     /// Pictures are flat sprites, so a tile costs a quad and a small texture.
     /// </summary>
     public class ShoppingListPanel : MonoBehaviour
     {
         const float Pad = 24f, TileW = 96f, TileH = 156f, Gap = 10f, FooterH = 44f, Icon = 70f, ChipH = 24f;
-        const int Columns = 5, Rows = 2, PerPage = Columns * Rows;
+        const int Columns = 5;
         const string AllCategory = "All";
 
         [SerializeField] float distance = 0.8f;
         [SerializeField] float belowEyes = 0.15f;
 
-        struct Option
+        class Tile
         {
             public FurnitureCatalog.Entry entry;
             public FurnitureVariant variant;
-        }
-
-        class Tile
-        {
             public GameObject root;
-            public Image icon, dot;
-            public TextMeshProUGUI name, size, dims, count;
+            public Image dot;
+            public TextMeshProUGUI count;
             public Button remove;
         }
 
-        class Chip
-        {
-            public string category;
-            public Button button;
-            public TextMeshProUGUI label;
-        }
-
         readonly List<Tile> m_Tiles = new List<Tile>();
-        readonly List<Chip> m_Chips = new List<Chip>();
-        readonly List<Option> m_Visible = new List<Option>();
+        readonly List<(string category, Button chip)> m_Chips = new List<(string, Button)>();
         PaletteManager m_Palettes;
         RoomFurniture m_Room;
         Transform m_Head;
-        string m_Category = AllCategory;
-        int m_Page;
-        TextMeshProUGUI m_PageLabel;
-        Button m_Prev, m_Next;
+        RectTransform m_Grid;
+        TextMeshProUGUI m_Summary;
 
         public event Action<FurnitureKind, string> AddRequested;
         public event Action Closed;
@@ -61,20 +47,22 @@ namespace PaletteRoom
             m_Room = room;
             m_Head = eventCamera.transform;
 
-            float width = 2 * Pad + Columns * TileW + (Columns - 1) * Gap;
+            const float scrollbar = 14f;
+            float width = 2 * Pad + Columns * TileW + (Columns - 1) * Gap + scrollbar;
 
-            // Lay the chips out first so the grid can start below however many rows they need.
             var categories = new List<string> { AllCategory };
             foreach (var e in FurnitureCatalog.Home)
             {
                 if (!categories.Contains(e.category))
                     categories.Add(e.category);
             }
-            var chipRects = FlowChips(categories, width - 2 * Pad, out float chipsHeight);
+            var chipRects = UIKit.FlowChips(categories, width - 2 * Pad, ChipH, 10f, out float chipsHeight);
 
-            float gridY = 82f + chipsHeight + Gap;
-            float pagerY = gridY + Rows * TileH + (Rows - 1) * Gap + Gap;
-            float height = pagerY + 28f + Gap + FooterH + Pad;
+            const float chipsY = 82f;
+            float gridY = chipsY + chipsHeight + Gap;
+            float gridH = 2.45f * (TileH + Gap); // the cut-off third row signals that the list scrolls
+            float summaryY = gridY + gridH + 6f;
+            float height = summaryY + 18f + Gap + FooterH + Pad;
 
             var canvas = UIKit.CreateWorldCanvas("Shopping List Canvas", new Vector2(width, height), transform, eventCamera);
             var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 24f);
@@ -83,25 +71,26 @@ namespace PaletteRoom
 
             var title = UIKit.Label(p, "Title", "Shopping list", 24f, UIKit.TextColor, style: FontStyles.Bold);
             UIKit.Place(title.rectTransform, Pad, Pad, width - 2 * Pad, 32f);
-            var sub = UIKit.Label(p, "Subtitle", "Pick a size and add it to your room. Grab to move, use two hands to turn.",
+            var sub = UIKit.Label(p, "Subtitle", "Pick a size and add it to your room. Drag the list to scroll; grab furniture to move it.",
                 11.5f, UIKit.MutedTextColor);
             UIKit.Place(sub.rectTransform, Pad, Pad + 34f, width - 2 * Pad, 16f);
 
             for (int i = 0; i < categories.Count; i++)
-                BuildChip(p, categories[i], chipRects[i]);
-
-            for (int i = 0; i < PerPage; i++)
             {
-                int col = i % Columns, row = i / Columns;
-                BuildTile(p, i, Pad + col * (TileW + Gap), gridY + row * (TileH + Gap));
+                string category = categories[i];
+                var chip = UIKit.Button(p, $"Filter {category}", category, 10f, false, () => ApplyFilter(category));
+                var r = chipRects[i];
+                UIKit.Place((RectTransform)chip.transform, Pad + r.x, chipsY + r.y, r.width, r.height);
+                m_Chips.Add((category, chip));
             }
 
-            m_Prev = UIKit.Button(p, "Previous Page", "Previous", 11f, false, () => SetPage(m_Page - 1));
-            UIKit.Place((RectTransform)m_Prev.transform, Pad, pagerY, 110f, 28f);
-            m_Next = UIKit.Button(p, "Next Page", "Next", 11f, false, () => SetPage(m_Page + 1));
-            UIKit.Place((RectTransform)m_Next.transform, width - Pad - 110f, pagerY, 110f, 28f);
-            m_PageLabel = UIKit.Label(p, "Page", string.Empty, 11f, UIKit.MutedTextColor, TextAlignmentOptions.Center);
-            UIKit.Place(m_PageLabel.rectTransform, Pad + 120f, pagerY, width - 2 * Pad - 240f, 28f);
+            m_Grid = UIKit.ScrollGrid(p, "Catalog Grid", Pad, gridY, width - 2 * Pad, gridH, new Vector2(TileW, TileH), Gap, Columns);
+            foreach (var e in FurnitureCatalog.Home)
+                foreach (var v in e.variants)
+                    BuildTile(e, v);
+
+            m_Summary = UIKit.Label(p, "Summary", string.Empty, 10.5f, UIKit.MutedTextColor, TextAlignmentOptions.Center);
+            UIKit.Place(m_Summary.rectTransform, Pad, summaryY, width - 2 * Pad, 18f);
 
             var close = UIKit.Button(p, "Close", "Close", 14f, false, Close);
             UIKit.Place((RectTransform)close.transform, Pad, height - Pad - FooterH + 6f, width - 2 * Pad, FooterH - 6f);
@@ -124,149 +113,73 @@ namespace PaletteRoom
             Closed?.Invoke();
         }
 
-        // ---- filtering & paging -----------------------------------------------------------
-
         void ApplyFilter(string category)
         {
-            m_Category = category;
-            m_Visible.Clear();
-            foreach (var e in FurnitureCatalog.Home)
+            int shown = 0;
+            foreach (var tile in m_Tiles)
             {
-                if (category != AllCategory && e.category != category)
-                    continue;
-                foreach (var v in e.variants)
-                    m_Visible.Add(new Option { entry = e, variant = v });
+                bool show = category == AllCategory || tile.entry.category == category;
+                tile.root.SetActive(show);
+                if (show)
+                    shown++;
             }
-            foreach (var chip in m_Chips)
-            {
-                bool on = chip.category == category;
-                chip.button.colors = on ? UIKit.PrimaryColors() : UIKit.SecondaryColors();
-                chip.label.color = on ? Color.white : UIKit.TextColor;
-            }
-            SetPage(0);
-        }
-
-        int PageCount => Mathf.Max(1, Mathf.CeilToInt(m_Visible.Count / (float)PerPage));
-
-        void SetPage(int page)
-        {
-            m_Page = Mathf.Clamp(page, 0, PageCount - 1);
+            foreach (var (c, chip) in m_Chips)
+                UIKit.SetChipSelected(chip, c == category);
+            m_Summary.text = $"{shown} item{(shown == 1 ? "" : "s")}";
+            m_Grid.anchoredPosition = Vector2.zero; // back to the top of the list
             Refresh();
         }
 
         void Refresh()
         {
-            if (m_Tiles.Count == 0)
-                return;
             var palette = m_Palettes.Current;
-            for (int i = 0; i < m_Tiles.Count; i++)
+            foreach (var tile in m_Tiles)
             {
-                var tile = m_Tiles[i];
-                int index = m_Page * PerPage + i;
-                bool shown = index < m_Visible.Count;
-                tile.root.SetActive(shown);
-                if (!shown)
-                    continue;
-                var option = m_Visible[index];
-                var sprite = m_Room.Library != null ? m_Room.Library.IconFor(option.entry.kind, option.variant.id) : null;
-                tile.icon.sprite = sprite;
-                tile.icon.enabled = sprite != null;
-                tile.name.text = option.entry.displayName;
-                tile.size.text = option.variant.label;
-                tile.dims.text = option.variant.dimensions;
-                tile.dot.color = palette.Get(RoleSlot(option.entry.role));
-                int n = m_Room.Count(option.entry.kind, option.variant.id);
+                tile.dot.color = palette.Get(RoleSlot(tile.entry.role));
+                int n = m_Room.Count(tile.entry.kind, tile.variant.id);
                 tile.count.text = n.ToString();
                 tile.remove.interactable = n > 0; // no dead buttons
             }
-
-            m_PageLabel.text = $"{m_Visible.Count} item{(m_Visible.Count == 1 ? "" : "s")} · page {m_Page + 1} of {PageCount}";
-            // Hide paging entirely when everything fits on one page.
-            m_Prev.gameObject.SetActive(PageCount > 1);
-            m_Next.gameObject.SetActive(PageCount > 1);
-            m_Prev.interactable = m_Page > 0;
-            m_Next.interactable = m_Page < PageCount - 1;
         }
 
-        void OnAdd(int tileIndex)
+        void BuildTile(FurnitureCatalog.Entry entry, FurnitureVariant variant)
         {
-            int index = m_Page * PerPage + tileIndex;
-            if (index < m_Visible.Count)
-                AddRequested?.Invoke(m_Visible[index].entry.kind, m_Visible[index].variant.id);
-        }
-
-        void OnRemove(int tileIndex)
-        {
-            int index = m_Page * PerPage + tileIndex;
-            if (index < m_Visible.Count)
-                m_Room.RemoveLast(m_Visible[index].entry.kind, m_Visible[index].variant.id);
-        }
-
-        // ---- building ---------------------------------------------------------------------
-
-        /// <summary>Wraps chips left-to-right into rows; returns each chip's rect relative to the chip area.</summary>
-        static List<Rect> FlowChips(List<string> labels, float maxWidth, out float totalHeight)
-        {
-            const float chipGap = 6f, charWidth = 5.6f, padding = 18f;
-            var rects = new List<Rect>();
-            float x = 0f, y = 0f;
-            foreach (var label in labels)
-            {
-                float w = padding + label.Length * charWidth;
-                if (x > 0f && x + w > maxWidth)
-                {
-                    x = 0f;
-                    y += ChipH + chipGap;
-                }
-                rects.Add(new Rect(x, y, w, ChipH));
-                x += w + chipGap;
-            }
-            totalHeight = y + ChipH;
-            return rects;
-        }
-
-        void BuildChip(Transform parent, string category, Rect rect)
-        {
-            var button = UIKit.Button(parent, $"Filter {category}", category, 10f, false, () => ApplyFilter(category));
-            UIKit.Place((RectTransform)button.transform, Pad + rect.x, 82f + rect.y, rect.width, rect.height);
-            m_Chips.Add(new Chip { category = category, button = button, label = button.GetComponentInChildren<TextMeshProUGUI>() });
-        }
-
-        void BuildTile(Transform parent, int index, float x, float y)
-        {
-            var card = UIKit.Panel(parent, $"Tile {index + 1}", new Color(1f, 1f, 1f, 0.75f), 10f);
+            var card = UIKit.Panel(m_Grid, $"{entry.displayName} {variant.label}", new Color(1f, 1f, 1f, 0.75f), 10f);
             card.raycastTarget = false;
-            UIKit.Place(card.rectTransform, x, y, TileW, TileH);
             var c = card.transform;
-            var tile = new Tile { root = card.gameObject };
+            var tile = new Tile { entry = entry, variant = variant, root = card.gameObject };
 
-            tile.icon = new GameObject("Icon", typeof(RectTransform)).AddComponent<Image>();
-            tile.icon.transform.SetParent(c, false);
-            tile.icon.preserveAspect = true;
-            tile.icon.raycastTarget = false;
-            UIKit.Place(tile.icon.rectTransform, (TileW - Icon) / 2f, 4f, Icon, Icon);
+            var sprite = m_Room.Library != null ? m_Room.Library.IconFor(entry.kind, variant.id) : null;
+            if (sprite != null)
+            {
+                var icon = new GameObject("Icon", typeof(RectTransform)).AddComponent<Image>();
+                icon.transform.SetParent(c, false);
+                icon.sprite = sprite;
+                icon.preserveAspect = true;
+                icon.raycastTarget = false;
+                UIKit.Place(icon.rectTransform, (TileW - Icon) / 2f, 4f, Icon, Icon);
+            }
 
             // Role color in the corner: the palette slot this piece will take.
             tile.dot = UIKit.Panel(c, "Role Color", Color.white, 4.5f);
             tile.dot.raycastTarget = false;
             UIKit.Place(tile.dot.rectTransform, 7f, 7f, 9f, 9f);
 
-            tile.name = UIKit.Label(c, "Name", string.Empty, 11f, UIKit.TextColor, TextAlignmentOptions.Top, FontStyles.Bold);
-            Fit(tile.name, 9f, 11f);
-            UIKit.Place(tile.name.rectTransform, 4f, 76f, TileW - 8f, 14f);
-            tile.size = UIKit.Label(c, "Size", string.Empty, 9.5f, UIKit.TextColor, TextAlignmentOptions.Top);
-            Fit(tile.size, 8f, 9.5f);
-            UIKit.Place(tile.size.rectTransform, 4f, 91f, TileW - 8f, 12f);
-            tile.dims = UIKit.Label(c, "Dimensions", string.Empty, 8.5f, UIKit.MutedTextColor, TextAlignmentOptions.Top);
-            Fit(tile.dims, 7f, 8.5f);
-            UIKit.Place(tile.dims.rectTransform, 4f, 104f, TileW - 8f, 11f);
+            var name = UIKit.Label(c, "Name", entry.displayName, 11f, UIKit.TextColor, TextAlignmentOptions.Top, FontStyles.Bold);
+            Fit(name, 9f, 11f);
+            UIKit.Place(name.rectTransform, 4f, 76f, TileW - 8f, 14f);
+            var size = UIKit.Label(c, "Size", variant.label, 9.5f, UIKit.TextColor, TextAlignmentOptions.Top);
+            Fit(size, 8f, 9.5f);
+            UIKit.Place(size.rectTransform, 4f, 91f, TileW - 8f, 12f);
+            var dims = UIKit.Label(c, "Dimensions", variant.dimensions, 8.5f, UIKit.MutedTextColor, TextAlignmentOptions.Top);
+            Fit(dims, 7f, 8.5f);
+            UIKit.Place(dims.rectTransform, 4f, 104f, TileW - 8f, 11f);
 
-            int i = index;
-            tile.remove = UIKit.Button(c, "Remove", "−", 16f, false, () => OnRemove(i));
+            tile.remove = UIKit.Button(c, "Remove", "−", 16f, false, () => m_Room.RemoveLast(entry.kind, variant.id));
             UIKit.Place((RectTransform)tile.remove.transform, 6f, TileH - 32f, 28f, 26f);
             tile.count = UIKit.Label(c, "Count", "0", 13f, UIKit.TextColor, TextAlignmentOptions.Center, FontStyles.Bold);
             UIKit.Place(tile.count.rectTransform, 34f, TileH - 32f, TileW - 68f, 26f);
-            var add = UIKit.Button(c, "Add", "+", 16f, true, () => OnAdd(i));
+            var add = UIKit.Button(c, "Add", "+", 16f, true, () => AddRequested?.Invoke(entry.kind, variant.id));
             UIKit.Place((RectTransform)add.transform, TileW - 34f, TileH - 32f, 28f, 26f);
 
             m_Tiles.Add(tile);
