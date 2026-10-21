@@ -140,6 +140,7 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 6250038574034764703}
     materialIndex: -1
+  allowOverride: 0
 --- !u!1 &849899773854526665
 GameObject:
   m_ObjectHideFlags: 0
@@ -224,6 +225,7 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 2023575616014730066}
     materialIndex: -1
+  allowOverride: 1
 --- !u!1 &2516266608316603734
 GameObject:
   m_ObjectHideFlags: 0
@@ -489,3 +491,4 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 107478009091772320}
     materialIndex: -1
+  allowOverride: 0

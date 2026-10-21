@@ -9,11 +9,31 @@ using UnityEngine.XR;
 
 namespace PaletteRoom
 {
+    /// <summary>What a detected surface is, for obstacle tests and the room preview.</summary>
+    public enum SurfaceKind
+    {
+        Floor,
+        Wall,
+        Ceiling,
+        /// <summary>A raised horizontal surface: bed, table, sofa seat, desk…</summary>
+        Furniture,
+    }
+
+    /// <summary>One detected real-room surface as a world-space rectangle.</summary>
+    public struct RoomSurface
+    {
+        public SurfaceKind kind;
+        public Vector3 centre;
+        public Quaternion rotation; // local X/Y span the rectangle, local Z is its normal
+        public Vector2 size;
+    }
+
     /// <summary>
     /// The real room as obstacles, from PICO plane detection (in the emulator, its simulated bedroom).
     /// Walls, doors and windows become thin barriers nothing on the floor may cross; raised horizontal
     /// surfaces (bed, table, sofa, desk…) become footprints that floor-standing furniture must avoid.
-    /// Virtual pieces are then placed around the real ones.
+    /// Surfaces are read from each plane's outline (or its 2D extent when there is no outline), which
+    /// also tells which way the plane faces.
     /// </summary>
     public class SceneObstacles : MonoBehaviour
     {
@@ -21,18 +41,22 @@ namespace PaletteRoom
         [SerializeField] FloorDetector floor;
         [Tooltip("Horizontal surfaces at least this far above the floor count as real furniture.")]
         [SerializeField] float minObstacleHeight = 0.12f;
+        [Tooltip("Horizontal surfaces higher than this above the floor are treated as ceiling, not furniture.")]
+        [SerializeField] float maxObstacleHeight = 1.6f;
         [Tooltip("Thickness given to walls when testing overlap (m).")]
         [SerializeField] float wallThickness = 0.06f;
 
+        readonly Dictionary<Guid, RoomSurface> m_Surfaces = new Dictionary<Guid, RoomSurface>();
         readonly Dictionary<Guid, Footprint> m_Walls = new Dictionary<Guid, Footprint>();
         readonly Dictionary<Guid, Footprint> m_Furniture = new Dictionary<Guid, Footprint>();
 
         public IEnumerable<Footprint> Walls => m_Walls.Values;
         public IEnumerable<Footprint> Furniture => m_Furniture.Values;
+        public IEnumerable<RoomSurface> Surfaces => m_Surfaces.Values;
         public int WallCount => m_Walls.Count;
         public int FurnitureCount => m_Furniture.Count;
 
-        /// <summary>Raised when the set of real-room obstacles changes.</summary>
+        /// <summary>Raised when the set of real-room surfaces changes.</summary>
         public event Action Changed;
 
         void Awake()
@@ -43,110 +67,206 @@ namespace PaletteRoom
                 floor = GetComponent<FloorDetector>();
         }
 
+        void OnEnable()
+        {
+            if (floor != null)
+                floor.FloorChanged += OnFloorChanged;
 #if ENABLE_PICO_XR_SDK && !UNITY_EDITOR
-        void OnEnable() => PXR_Manager.PlaneDetectionDataUpdated += OnPlanesUpdated;
-
-        void OnDisable() => PXR_Manager.PlaneDetectionDataUpdated -= OnPlanesUpdated;
+            PXR_Manager.PlaneDetectionDataUpdated += OnPlanesUpdated;
 #endif
+        }
+
+        void OnDisable()
+        {
+            if (floor != null)
+                floor.FloorChanged -= OnFloorChanged;
+#if ENABLE_PICO_XR_SDK && !UNITY_EDITOR
+            PXR_Manager.PlaneDetectionDataUpdated -= OnPlanesUpdated;
+#endif
+        }
+
+        // Furniture vs floor vs ceiling depends on height above the floor.
+        void OnFloorChanged(FloorDetector _)
+        {
+            if (m_Surfaces.Count == 0)
+                return;
+            Rebuild();
+            Changed?.Invoke();
+        }
 
 #if ENABLE_PICO_XR_SDK
         void OnPlanesUpdated(List<PxrPlaneData> planes)
         {
             bool changed = false;
-            float floorY = floor != null ? floor.FloorY : 0f;
             foreach (var plane in planes)
             {
                 if (plane.state == MeshChangeState.Unchanged)
                     continue;
-                changed |= m_Walls.Remove(plane.uuid) | m_Furniture.Remove(plane.uuid);
-                if (plane.state == MeshChangeState.Removed || plane.vertices == null || plane.vertices.Length < 3)
+                changed |= m_Surfaces.Remove(plane.uuid);
+                if (plane.state == MeshChangeState.Removed)
                     continue;
-
-                var world = new Vector3[plane.vertices.Length];
-                for (int i = 0; i < world.Length; i++)
-                    world[i] = TrackingToWorld(plane.position + plane.rotation * plane.vertices[i]);
-
-                if (IsWall(plane))
-                {
-                    m_Walls[plane.uuid] = WallFootprint(world);
-                    changed = true;
-                }
-                else if (plane.orientationMode == PxrPlaneOrientation.HorizontalUpward && plane.label != PxrSemanticLabel.Floor
-                    && TrackingToWorld(plane.position).y - floorY >= minObstacleHeight)
-                {
-                    m_Furniture[plane.uuid] = SurfaceFootprint(world, TrackingRotationToWorld(plane.rotation));
-                    changed = true;
-                }
+                if (!TryMeasure(plane, out var surface))
+                    continue;
+                if (!TryClassify(plane, surface, out surface.kind))
+                    continue;
+                m_Surfaces[plane.uuid] = surface;
+                if (plane.state == MeshChangeState.Added)
+                    Debug.Log($"[PaletteRoom] Plane {plane.label} {plane.orientationMode} → {surface.kind}, {surface.size.x:F2}×{surface.size.y:F2} m at y={surface.centre.y:F2}");
+                changed = true;
             }
-            if (changed)
-                Changed?.Invoke();
+            if (!changed)
+                return;
+            Rebuild();
+            Debug.Log($"[PaletteRoom] Room scan: {m_Surfaces.Count} surfaces → {m_Walls.Count} walls, {m_Furniture.Count} furniture tops.");
+            Changed?.Invoke();
         }
 
-        static bool IsWall(PxrPlaneData plane) =>
-            plane.label == PxrSemanticLabel.Wall || plane.label == PxrSemanticLabel.Door
-            || plane.label == PxrSemanticLabel.Window || plane.label == PxrSemanticLabel.Opening
-            || (plane.orientationMode == PxrPlaneOrientation.Vertical && plane.label == PxrSemanticLabel.Unknown);
+        /// <summary>
+        /// Converts a plane to a world rectangle (local Z = normal). Which local axis is the plane's normal
+        /// differs between conventions, so it is read from the outline: the plane's vertices are flat
+        /// along exactly one local axis. Without an outline, the 2D extent spans local X/Y.
+        /// </summary>
+        bool TryMeasure(PxrPlaneData plane, out RoomSurface surface)
+        {
+            surface = default;
+            Vector3 localCentre, spread;
+            if (plane.vertices != null && plane.vertices.Length >= 3)
+            {
+                var bounds = new Bounds(plane.vertices[0], Vector3.zero);
+                foreach (var v in plane.vertices)
+                    bounds.Encapsulate(v);
+                localCentre = bounds.center;
+                spread = bounds.size;
+            }
+            else
+            {
+                var extent = new Vector2(plane.box2D.extent.width, plane.box2D.extent.height);
+                // OpenXR rectangles give the offset of their lower-left corner.
+                localCentre = new Vector3(plane.box2D.offset.x + extent.x / 2f, plane.box2D.offset.y + extent.y / 2f, 0f);
+                spread = new Vector3(extent.x, extent.y, 0f);
+            }
+
+            int n = spread.x <= spread.y && spread.x <= spread.z ? 0 : spread.y <= spread.z ? 1 : 2;
+            int a = (n + 1) % 3, b = (n + 2) % 3;
+            var size = new Vector2(spread[a], spread[b]);
+            if (size.x <= 0.05f || size.y <= 0.05f)
+                return false;
+
+            var rotation = TrackingRotationToWorld(plane.rotation);
+            var normal = rotation * Axis(n);
+            var up = rotation * Axis(b);
+            surface.rotation = Quaternion.LookRotation(normal, up); // local X ≈ axis a, Y = axis b, Z = normal
+            surface.size = size;
+            surface.centre = TrackingToWorld(plane.position) + rotation * localCentre;
+            return true;
+        }
+
+        static Vector3 Axis(int i) => i == 0 ? Vector3.right : i == 1 ? Vector3.up : Vector3.forward;
+
+        /// <summary>
+        /// Floor, wall, ceiling or a raised surface (refined by height in <see cref="Rebuild"/>). Small
+        /// upright pieces (pictures, cabinet fronts) are not walls and are skipped.
+        /// </summary>
+        static bool TryClassify(PxrPlaneData plane, RoomSurface s, out SurfaceKind kind)
+        {
+            kind = SurfaceKind.Furniture;
+            var normal = s.rotation * Vector3.forward;
+            bool upright = Mathf.Abs(normal.y) < 0.5f;
+            switch (plane.label)
+            {
+                case PxrSemanticLabel.Floor: kind = SurfaceKind.Floor; return true;
+                case PxrSemanticLabel.Ceiling: kind = SurfaceKind.Ceiling; return true;
+                case PxrSemanticLabel.Wall:
+                case PxrSemanticLabel.Door:
+                case PxrSemanticLabel.Window:
+                case PxrSemanticLabel.Opening:
+                    kind = SurfaceKind.Wall;
+                    return true;
+            }
+            if (upright)
+            {
+                // Unlabelled upright surfaces only count as walls when they're wall-sized.
+                kind = SurfaceKind.Wall;
+                float tall = Mathf.Abs((s.rotation * Vector3.up).y) > 0.7f ? s.size.y : s.size.x;
+                float wide = Mathf.Max(s.size.x, s.size.y);
+                return tall >= 1.5f && wide >= 1f;
+            }
+            // The outline gives the normal's axis but not which way it points, so trust the runtime for that.
+            if (plane.orientationMode == PxrPlaneOrientation.HorizontalDownward)
+                kind = SurfaceKind.Ceiling;
+            return true;
+        }
 
         Vector3 TrackingToWorld(Vector3 p)
         {
-            var space = xrOrigin != null && xrOrigin.CameraFloorOffsetObject != null ? xrOrigin.CameraFloorOffsetObject.transform : null;
+            var space = TrackingSpace;
             return space != null ? space.TransformPoint(p) : p;
         }
 
         Quaternion TrackingRotationToWorld(Quaternion r)
         {
-            var space = xrOrigin != null && xrOrigin.CameraFloorOffsetObject != null ? xrOrigin.CameraFloorOffsetObject.transform : null;
+            var space = TrackingSpace;
             return space != null ? space.rotation * r : r;
         }
+
+        Transform TrackingSpace => xrOrigin != null && xrOrigin.CameraFloorOffsetObject != null
+            ? xrOrigin.CameraFloorOffsetObject.transform
+            : null;
 #endif
 
-        /// <summary>A wall as a thin strip along its widest horizontal extent.</summary>
-        Footprint WallFootprint(Vector3[] world)
+        /// <summary>Re-derives walls and furniture footprints from the surfaces, using the current floor height.</summary>
+        void Rebuild()
         {
-            // The two points farthest apart in plan view are the wall's ends.
-            Vector2 a = Flat(world[0]), b = a;
-            float best = -1f;
-            for (int i = 0; i < world.Length; i++)
+            m_Walls.Clear();
+            m_Furniture.Clear();
+            float floorY = floor != null ? floor.FloorY : 0f;
+            var keys = new List<Guid>(m_Surfaces.Keys);
+            foreach (var key in keys)
             {
-                for (int j = i + 1; j < world.Length; j++)
+                var s = m_Surfaces[key];
+                if (s.kind == SurfaceKind.Wall)
                 {
-                    float d = (Flat(world[i]) - Flat(world[j])).sqrMagnitude;
-                    if (d > best)
-                    {
-                        best = d;
-                        a = Flat(world[i]);
-                        b = Flat(world[j]);
-                    }
+                    m_Walls[key] = WallFootprint(s);
+                    continue;
                 }
+                if (s.kind != SurfaceKind.Furniture)
+                    continue;
+                float height = s.centre.y - floorY;
+                if (height < minObstacleHeight)
+                    s.kind = SurfaceKind.Floor;
+                else if (height > maxObstacleHeight)
+                    s.kind = SurfaceKind.Ceiling;
+                else
+                    m_Furniture[key] = SurfaceFootprint(s);
+                m_Surfaces[key] = s;
             }
-            var along = (b - a).sqrMagnitude > 1e-6f ? (b - a).normalized : Vector2.right;
-            var across = new Vector2(-along.y, along.x);
-            return new Footprint((a + b) * 0.5f, along, across, new Vector2((b - a).magnitude * 0.5f, wallThickness * 0.5f));
         }
 
-        /// <summary>A raised surface as a rectangle aligned with the plane's own heading.</summary>
-        static Footprint SurfaceFootprint(Vector3[] world, Quaternion rotation)
+        /// <summary>A wall as a thin strip along its horizontal extent.</summary>
+        Footprint WallFootprint(RoomSurface s)
         {
-            var right = rotation * Vector3.right;
-            var axisX = new Vector2(right.x, right.z);
-            if (axisX.sqrMagnitude < 0.01f)
-            {
-                var fwd = rotation * Vector3.forward;
-                axisX = new Vector2(fwd.x, fwd.z);
-            }
-            axisX = axisX.sqrMagnitude > 1e-6f ? axisX.normalized : Vector2.right;
-            var axisZ = new Vector2(-axisX.y, axisX.x);
+            // The rectangle's local X or Y, whichever is more horizontal, runs along the wall.
+            var x = s.rotation * Vector3.right;
+            var y = s.rotation * Vector3.up;
+            bool xHorizontal = Mathf.Abs(x.y) <= Mathf.Abs(y.y);
+            var along3 = xHorizontal ? x : y;
+            float length = xHorizontal ? s.size.x : s.size.y;
+            var along = new Vector2(along3.x, along3.z);
+            along = along.sqrMagnitude > 1e-6f ? along.normalized : Vector2.right;
+            var across = new Vector2(-along.y, along.x);
+            return new Footprint(Flat(s.centre), along, across, new Vector2(length * 0.5f, wallThickness * 0.5f));
+        }
 
-            float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
-            foreach (var p in world)
-            {
-                var f = Flat(p);
-                float x = Vector2.Dot(f, axisX), z = Vector2.Dot(f, axisZ);
-                minX = Mathf.Min(minX, x); maxX = Mathf.Max(maxX, x);
-                minZ = Mathf.Min(minZ, z); maxZ = Mathf.Max(maxZ, z);
-            }
-            var centre = axisX * ((minX + maxX) * 0.5f) + axisZ * ((minZ + maxZ) * 0.5f);
-            return new Footprint(centre, axisX, axisZ, new Vector2((maxX - minX) * 0.5f, (maxZ - minZ) * 0.5f));
+        /// <summary>A raised horizontal surface as its rectangle seen from above.</summary>
+        static Footprint SurfaceFootprint(RoomSurface s)
+        {
+            var x = s.rotation * Vector3.right;
+            var y = s.rotation * Vector3.up;
+            var axisX = new Vector2(x.x, x.z);
+            var axisZ = new Vector2(y.x, y.z);
+            axisX = axisX.sqrMagnitude > 1e-6f ? axisX.normalized : Vector2.right;
+            axisZ = axisZ.sqrMagnitude > 1e-6f ? axisZ.normalized : new Vector2(-axisX.y, axisX.x);
+            return new Footprint(Flat(s.centre), axisX, axisZ, s.size * 0.5f);
         }
 
         static Vector2 Flat(Vector3 p) => new Vector2(p.x, p.z);
@@ -174,10 +294,11 @@ namespace PaletteRoom
 
         static float Cross(Vector2 u, Vector2 v) => u.x * v.y - u.y * v.x;
 
-        /// <summary>For Editor testing: adds a real-room obstacle by hand.</summary>
-        public void AddTestObstacle(Footprint footprint, bool isWall)
+        /// <summary>For Editor testing: adds a real-room surface by hand.</summary>
+        public void AddTestSurface(RoomSurface surface)
         {
-            (isWall ? m_Walls : m_Furniture)[Guid.NewGuid()] = footprint;
+            m_Surfaces[Guid.NewGuid()] = surface;
+            Rebuild();
             Changed?.Invoke();
         }
     }

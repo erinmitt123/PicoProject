@@ -112,7 +112,7 @@ namespace PaletteRoom
             if (m_Calibrator.IsActive)
             {
                 m_FloorDot.color = new Color(0.95f, 0.65f, 0.2f);
-                m_FloorStatus.text = "Touch the floor with a hand or controller, then pinch or pull the trigger.";
+                m_FloorStatus.text = "Touch the floor with a hand or controller, or point at it, then pinch or pull the trigger.";
                 m_FloorButtonLabel.text = "Cancel";
                 m_StartButton.interactable = false;
                 return;

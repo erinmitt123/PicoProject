@@ -100,6 +100,7 @@ namespace PaletteRoom
 
             var added = new List<FurnitureItem>();
             FurnitureItem bookshelf = null;
+            var sofaShift = Vector3.zero;
             foreach (var p in SampleLayout)
             {
                 var item = Factory.Create(p.kind, root);
@@ -109,12 +110,24 @@ namespace PaletteRoom
                     item.transform.localRotation *= Quaternion.Euler(-15f, 0f, 0f); // lean back into the sofa
                 if (p.kind == FurnitureKind.Bookshelf)
                     bookshelf = item;
-                // Fit the layout to the real room: anything that collides (with other pieces, walls or real
-                // furniture) or lands on the far side of a wall moves to the nearest free spot.
                 var pose = item.transform;
-                bool misplaced = !IsFree(item, pose.position, pose.rotation) || BehindWall(head.position, pose.position);
-                if (misplaced && TryFindFreeSpot(item, pose.position, pose.rotation, head.position, out var spot))
-                    pose.position = spot;
+                if (p.kind == FurnitureKind.ThrowPillow)
+                {
+                    // Pillows sit on the sofa, so they go wherever the sofa ended up.
+                    pose.position += sofaShift;
+                }
+                else
+                {
+                    // Fit the layout to the real room: anything that collides (with other pieces, walls or real
+                    // furniture) or lands on the far side of a wall moves to the nearest free spot.
+                    bool misplaced = !IsFree(item, pose.position, pose.rotation) || BehindWall(head.position, pose.position);
+                    if (misplaced && TryFindFreeSpot(item, pose.position, pose.rotation, head.position, out var spot))
+                    {
+                        if (p.kind == FurnitureKind.Sofa)
+                            sofaShift = spot - pose.position;
+                        pose.position = spot;
+                    }
+                }
                 added.Add(item);
                 m_Items.Add(item);
             }

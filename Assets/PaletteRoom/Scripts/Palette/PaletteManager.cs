@@ -90,15 +90,35 @@ namespace PaletteRoom
             var roleSlot = RoleSlot(item.Role, AccentOrdinal(index));
             foreach (var zone in item.Zones)
             {
-                if (!zone.IsPaintable)
+                if (!zone.FollowsPalette)
                     continue;
-                var slot = zone.Source == ZoneColorSource.ItemRole ? roleSlot : zone.Slot;
+                // A color the user picked for this part wins over the 60-30-10 assignment.
+                var slot = zone.Override ?? (zone.Source == ZoneColorSource.ItemRole ? roleSlot : zone.Slot);
                 var color = palette.Get(slot);
                 if (animate)
                     zone.BlendTo(color, BlendDuration);
                 else
                     zone.SetColorImmediate(color);
             }
+        }
+
+        /// <summary>Recolors one item after its per-part picks changed (blends, like a palette change).</summary>
+        public void RefreshItem(FurnitureItem item)
+        {
+            int index = m_Items.IndexOf(item);
+            if (index >= 0)
+                ApplyToItem(item, index, Current, animate: true);
+        }
+
+        /// <summary>The palette slot a part shows right now (its pick, or what 60-30-10 gives it).</summary>
+        public PaletteSlot? SlotFor(FurnitureItem item, PaintableZone zone)
+        {
+            if (zone.Override.HasValue)
+                return zone.Override;
+            if (!zone.IsPaintable)
+                return null;
+            int index = m_Items.IndexOf(item);
+            return zone.Source == ZoneColorSource.ItemRole ? RoleSlot(item.Role, AccentOrdinal(Mathf.Max(0, index))) : zone.Slot;
         }
 
         /// <summary>How many Accent items were registered before the item at <paramref name="index"/>.</summary>

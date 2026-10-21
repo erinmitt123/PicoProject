@@ -203,7 +203,7 @@ namespace PaletteRoom
         void RefreshFooter()
         {
             m_FooterLabel.text = m_Calibrator.IsActive
-                ? "Touch the floor and pinch · Cancel"
+                ? "Touch or point at the floor · Cancel"
                 : "Set floor height";
         }
     }

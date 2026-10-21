@@ -6,8 +6,8 @@ using UnityEngine.XR.Interaction.Toolkit.Transformers;
 namespace PaletteRoom
 {
     /// <summary>
-    /// Runs after XRI's general grab transformer and enforces real-world placement: floor pieces stay
-    /// on the floor (the room root's height), only turn around the vertical axis, and can't be pushed
+    /// Runs after XRI's general grab transformer and enforces real-world placement: nothing goes below
+    /// the floor (the room root's height); floor pieces stay on it, only turn around the vertical axis, and can't be pushed
     /// into other floor-standing pieces — a blocked move slides along the obstacle or holds at the last
     /// valid pose. Wall pieces stay upright. Two-handed grabs rotate furniture in place.
     /// </summary>
@@ -59,17 +59,23 @@ namespace PaletteRoom
         public override void Process(XRGrabInteractable grabInteractable, XRInteractionUpdateOrder.UpdatePhase updatePhase,
             ref Pose targetPose, ref Vector3 localScale)
         {
-            if (m_Item == null || m_Item.Mount == FurnitureMount.Free)
+            if (m_Item == null)
+                return;
+
+            // Every root sits at the piece's bottom, so nothing may go below the floor (the room root's height).
+            float floorY = transform.parent != null ? transform.parent.position.y : 0f;
+            var p = targetPose.position;
+            if (m_Item.Mount == FurnitureMount.Floor)
+                p.y = floorY;
+            else
+                p.y = Mathf.Max(p.y, floorY);
+            targetPose.position = p;
+
+            if (m_Item.Mount == FurnitureMount.Free)
                 return;
 
             float yaw = targetPose.rotation.eulerAngles.y;
             targetPose.rotation = Quaternion.Euler(0f, yaw, 0f);
-
-            if (m_Item.Mount == FurnitureMount.Floor)
-            {
-                float floorY = transform.parent != null ? transform.parent.position.y : 0f;
-                targetPose.position = new Vector3(targetPose.position.x, floorY, targetPose.position.z);
-            }
 
             if (m_Room == null || !m_Item.BlocksFloor)
                 return;

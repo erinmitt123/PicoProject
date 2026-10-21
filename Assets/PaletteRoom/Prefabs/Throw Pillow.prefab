@@ -140,6 +140,7 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 2125741186847992969}
     materialIndex: -1
+  allowOverride: 1
 --- !u!1 &5239280840760274227
 GameObject:
   m_ObjectHideFlags: 0

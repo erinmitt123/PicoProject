@@ -42,15 +42,45 @@ namespace PaletteRoom
         [SerializeField] ZoneColorSource source = ZoneColorSource.ItemRole;
         [SerializeField] PaletteSlot slot = PaletteSlot.Neutral;
         [SerializeField] Target[] targets = Array.Empty<Target>();
+        [Tooltip("Whether the user may pick this part's color (off for bulbs, glass, soil, leaves).")]
+        [SerializeField] bool allowOverride = true;
 
         Material m_Material;
         Coroutine m_Blend;
+        bool m_HasOverride;
+        PaletteSlot m_Override;
+        Color m_OriginalColor = Color.white;
 
         public string ZoneName => zoneName;
         public ZoneColorSource Source => source;
         public PaletteSlot Slot => slot;
         public bool IsPaintable => source != ZoneColorSource.Fixed;
         public Target[] Targets => targets;
+        public bool AllowOverride => allowOverride;
+
+        /// <summary>The palette slot the user pinned this part to, or null to follow the 60-30-10 rule.</summary>
+        public PaletteSlot? Override => m_HasOverride ? m_Override : (PaletteSlot?)null;
+
+        /// <summary>Whether a palette change recolors this zone (it's paintable, or the user pinned a color).</summary>
+        public bool FollowsPalette => IsPaintable || m_HasOverride;
+
+        /// <summary>
+        /// Pins this part to a palette slot (it then follows that slot through palette changes), or clears
+        /// the pin. A fixed part (e.g. oak legs) returns to its natural finish when cleared.
+        /// </summary>
+        public void SetOverride(PaletteSlot? value, float blendDuration)
+        {
+            if (!allowOverride)
+                return;
+            m_HasOverride = value.HasValue;
+            if (value.HasValue)
+                m_Override = value.Value;
+            EnsureMaterial();
+            if (!m_HasOverride && !IsPaintable)
+                BlendTo(m_OriginalColor, blendDuration);
+        }
+
+        public void SetAllowOverride(bool allowed) => allowOverride = allowed;
         public Color CurrentColor => m_Material != null ? m_Material.GetColor(BaseColorId) : Color.white;
 
         /// <summary>Sets up the zone with a material it owns (used by code-built furniture).</summary>
@@ -61,6 +91,7 @@ namespace PaletteRoom
             this.slot = slot;
             this.targets = targets;
             m_Material = material;
+            m_OriginalColor = material.GetColor(BaseColorId);
             Assign(material);
         }
 
@@ -76,17 +107,22 @@ namespace PaletteRoom
         void Awake()
         {
             // Prefab zones share the asset material; give each placed item its own copy so pieces can
-            // be colored independently. Fixed zones never change color, so they keep the originals.
-            if (IsPaintable && m_Material == null && targets.Length > 0 && targets[0].renderer != null)
-            {
-                var t = targets[0];
-                var shared = t.materialIndex < 0 ? t.renderer.sharedMaterial : t.renderer.sharedMaterials[t.materialIndex];
-                if (shared != null)
-                {
-                    m_Material = new Material(shared) { name = shared.name + " (zone)" };
-                    Assign(m_Material);
-                }
-            }
+            // be colored independently. Fixed zones keep the shared original until the user paints them.
+            if (IsPaintable)
+                EnsureMaterial();
+        }
+
+        void EnsureMaterial()
+        {
+            if (m_Material != null || targets.Length == 0 || targets[0].renderer == null)
+                return;
+            var t = targets[0];
+            var shared = t.materialIndex < 0 ? t.renderer.sharedMaterial : t.renderer.sharedMaterials[t.materialIndex];
+            if (shared == null)
+                return;
+            m_Material = new Material(shared) { name = shared.name + " (zone)" };
+            m_OriginalColor = m_Material.GetColor(BaseColorId);
+            Assign(m_Material);
         }
 
         void Assign(Material material)

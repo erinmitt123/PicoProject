@@ -173,3 +173,4 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 985111961174901882}
     materialIndex: -1
+  allowOverride: 1

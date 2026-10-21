@@ -50,6 +50,7 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 7762583358360505753}
     materialIndex: 0
+  allowOverride: 1
 --- !u!1 &3696843565004730459
 GameObject:
   m_ObjectHideFlags: 0
@@ -191,6 +192,7 @@ MonoBehaviour:
   targets:
   - renderer: {fileID: 7762583358360505753}
     materialIndex: 1
+  allowOverride: 1
 --- !u!1 &7575602872123402986
 GameObject:
   m_ObjectHideFlags: 0

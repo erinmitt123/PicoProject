@@ -39,6 +39,7 @@ namespace PaletteRoom
         {
             m_Head = head;
             var canvas = GetComponentInChildren<Canvas>(true);
+            m_PanelCanvas = canvas;
             var size = ((RectTransform)canvas.transform).sizeDelta * UIKit.MillimetresToMetres;
 
             BuildBar(eventCamera, size);
@@ -92,11 +93,28 @@ namespace PaletteRoom
 
         void OnDestroy() => m_Recall?.Dispose();
 
+        const float BarW = 0.14f, BarH = 0.014f, BarGap = 0.018f;
+
+        Transform m_BarCanvas, m_BarHit;
+        Canvas m_PanelCanvas;
+
+        /// <summary>Moves the grab bar under the panel's current bottom edge (call after resizing the panel).</summary>
+        public void Relayout()
+        {
+            if (m_PanelCanvas == null || m_BarCanvas == null)
+                return;
+            var size = ((RectTransform)m_PanelCanvas.transform).sizeDelta * UIKit.MillimetresToMetres;
+            var pos = new Vector3(0f, -(size.y / 2f + BarGap + BarH / 2f), 0f);
+            m_BarCanvas.localPosition = pos;
+            m_BarHit.localPosition = pos;
+        }
+
         void BuildBar(Camera eventCamera, Vector2 panelSize)
         {
-            const float barW = 0.14f, barH = 0.014f, gap = 0.018f;
+            const float barW = BarW, barH = BarH, gap = BarGap;
             var barCanvas = UIKit.CreateWorldCanvas("Grab Bar", new Vector2(barW, barH) / UIKit.MillimetresToMetres, transform, eventCamera);
             barCanvas.transform.localPosition = new Vector3(0f, -(panelSize.y / 2f + gap + barH / 2f), 0f);
+            m_BarCanvas = barCanvas.transform;
             // The bar is grabbed through its collider, not through UI raycasts.
             Destroy(barCanvas.GetComponent<UnityEngine.XR.Interaction.Toolkit.UI.TrackedDeviceGraphicRaycaster>());
             var raycaster = barCanvas.GetComponent<GraphicRaycaster>();
@@ -113,6 +131,7 @@ namespace PaletteRoom
             hit.transform.localPosition = barCanvas.transform.localPosition;
             var box = hit.AddComponent<BoxCollider>();
             box.size = new Vector3(barW + 0.04f, barH + 0.03f, 0.03f);
+            m_BarHit = hit.transform;
         }
 
         void MakeGrabbable()

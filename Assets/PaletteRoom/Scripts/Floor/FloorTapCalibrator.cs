@@ -5,9 +5,9 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 namespace PaletteRoom
 {
     /// <summary>
-    /// "Tap the floor to set height": while active, the user lowers a hand or controller to the floor
-    /// and pinches / pulls the trigger. Uses the near/far interactors, so hands and controllers behave
-    /// the same.
+    /// "Tap the floor to set height": while active, the user lowers a hand or controller to the floor (or
+    /// points its ray at a scanned floor surface) and pinches / pulls the trigger. Uses the near/far
+    /// interactors, so hands and controllers behave the same.
     /// </summary>
     public class FloorTapCalibrator : MonoBehaviour
     {
@@ -21,6 +21,9 @@ namespace PaletteRoom
         [SerializeField] Transform reticle;
 
         readonly InteractorPoints m_Points = new InteractorPoints();
+        SceneObstacles scene;
+
+        void Awake() => scene = GetComponent<SceneObstacles>();
 
         public bool IsActive { get; private set; }
 
@@ -53,35 +56,80 @@ namespace PaletteRoom
                 return;
 
             float ceiling = head.position.y - minDistanceBelowHead;
-            bool found = false;
-            Vector3 lowest = default;
+            bool found = false, pointed = false;
+            Vector3 lowest = default, aimed = default;
             foreach (var interactor in m_Points.Active)
             {
                 if (!interactor.isActiveAndEnabled)
                     continue;
-                var p = InteractorPoints.Position(interactor);
-                if (p.y > ceiling)
-                    continue;
                 // Pressing a UI button (e.g. Cancel on the dock, which follows the hand down) is not a floor tap.
                 bool overUI = interactor.TryGetCurrentUIRaycastResult(out _);
-                if (interactor.logicalSelectState.wasPerformedThisFrame && !overUI)
+                bool pressed = interactor.logicalSelectState.wasPerformedThisFrame && !overUI;
+                var p = InteractorPoints.Position(interactor);
+                if (p.y <= ceiling)
                 {
-                    Finish(p.y - contactOffset);
-                    return;
+                    if (pressed)
+                    {
+                        Finish(p.y - contactOffset);
+                        return;
+                    }
+                    if (!found || p.y < lowest.y)
+                    {
+                        lowest = p;
+                        found = true;
+                    }
+                    continue;
                 }
-                if (!found || p.y < lowest.y)
+
+                // Out of reach of the floor: pointing the ray at a scanned floor surface works too.
+                if (!overUI && TryPointAtFloor(interactor, out var hit))
                 {
-                    lowest = p;
-                    found = true;
+                    if (pressed)
+                    {
+                        Finish(hit.y);
+                        return;
+                    }
+                    aimed = hit;
+                    pointed = true;
                 }
             }
 
             if (reticle != null)
             {
-                reticle.gameObject.SetActive(found);
+                reticle.gameObject.SetActive(found || pointed);
                 if (found)
                     reticle.position = new Vector3(lowest.x, lowest.y - contactOffset + 0.002f, lowest.z);
+                else if (pointed)
+                    reticle.position = aimed + Vector3.up * 0.002f;
             }
+        }
+
+        /// <summary>Where the interactor's far ray meets a scanned floor surface, if it does.</summary>
+        bool TryPointAtFloor(NearFarInteractor interactor, out Vector3 hit)
+        {
+            hit = default;
+            var caster = interactor.farInteractionCaster != null ? interactor.farInteractionCaster.castOrigin : null;
+            if (caster == null || scene == null)
+                return false;
+            var ray = new Ray(caster.position, caster.forward);
+            if (ray.direction.y > -0.05f)
+                return false;
+            float best = float.MaxValue;
+            foreach (var s in scene.Surfaces)
+            {
+                if (s.kind != SurfaceKind.Floor)
+                    continue;
+                float t = (s.centre.y - ray.origin.y) / ray.direction.y;
+                if (t <= 0f || t >= best || t > 10f)
+                    continue;
+                var point = ray.GetPoint(t);
+                var local = Quaternion.Inverse(s.rotation) * (point - s.centre);
+                if (Mathf.Abs(local.x) > s.size.x / 2f || Mathf.Abs(local.y) > s.size.y / 2f)
+                    continue;
+                best = t;
+                hit = point;
+            }
+            return best < float.MaxValue;
         }
 
         void Finish(float floorY)

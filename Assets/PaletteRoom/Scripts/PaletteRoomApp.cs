@@ -35,6 +35,7 @@ namespace PaletteRoom
         FloorTapCalibrator m_Calibrator;
         Camera m_Camera;
         MovablePanel m_DockPanel;
+        ObjectColorPanel m_ObjectColor;
 
         bool TestModeActive => Application.isEditor && editorTestMode && !XRSettings.isDeviceActive;
 
@@ -75,7 +76,25 @@ namespace PaletteRoom
             shoppingList.Closed += ShowDock;
             shoppingList.gameObject.SetActive(false);
 
+            // Click (rather than drag) a piece to choose its colors.
+            var colorGo = new GameObject("Object Color Panel");
+            colorGo.transform.SetParent(transform, false);
+            m_ObjectColor = colorGo.AddComponent<ObjectColorPanel>();
+            m_ObjectColor.Build(m_Camera, m_Palettes);
+            AddMovable(colorGo, recallable: false);
+            colorGo.SetActive(false);
+            FurnitureClickDetector.Clicked += OpenObjectColor;
+
             m_Floor.FloorChanged += OnFloorChanged;
+        }
+
+        void OnDestroy() => FurnitureClickDetector.Clicked -= OpenObjectColor;
+
+        void OpenObjectColor(FurnitureItem item)
+        {
+            if (item == null || welcomePanel.gameObject.activeSelf)
+                return;
+            m_ObjectColor.Open(item);
         }
 
         IEnumerator Start()

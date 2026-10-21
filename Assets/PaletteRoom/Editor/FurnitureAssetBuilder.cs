@@ -65,7 +65,6 @@ namespace PaletteRoom.EditorTools
                 Entry(FurnitureKind.Armchair, BuildArmchair()),
                 Entry(FurnitureKind.SideTable, BuildSideTable()),
                 Entry(FurnitureKind.Plant, BuildPlant()),
-                Entry(FurnitureKind.WallArt, BuildWallArt()),
                 Entry(FurnitureKind.ThrowPillow, BuildPillow()),
             };
             EditorUtility.SetDirty(library);
@@ -295,32 +294,10 @@ namespace PaletteRoom.EditorTools
             ApplyKeywords(leafMat);
             SetSlot(leaves, -1, leafMat);
             Zone(root, "Pot", ZoneColorSource.ItemRole, new PaintableZone.Target(pot));
-            Zone(root, "Soil", ZoneColorSource.Fixed, new PaintableZone.Target(dirt));
-            Zone(root, "Leaves", ZoneColorSource.Fixed, new PaintableZone.Target(leaves));
+            // Soil and leaves keep their natural look; only the pot is offered for recoloring.
+            Zone(root, "Soil", ZoneColorSource.Fixed, new PaintableZone.Target(dirt)).SetAllowOverride(false);
+            Zone(root, "Leaves", ZoneColorSource.Fixed, new PaintableZone.Target(leaves)).SetAllowOverride(false);
             return Save(root, "Plant");
-        }
-
-        static GameObject BuildWallArt()
-        {
-            const string id = "hanging_picture_frame_01";
-            var (root, model) = Begin("Wall Art", id);
-            var r = model.GetComponentInChildren<Renderer>();
-            // The scan is centred on its origin; lift it so the root is the bottom edge, like a hung frame.
-            var b = r.bounds;
-            model.transform.position += new Vector3(0f, b.extents.y - b.center.y, -b.min.z);
-
-            int glass = SlotOf(r, "glass"), art = SlotOf(r, "artwork"), frameSlot = SlotOf(r, "hanging_picture_frame_01", exact: true);
-            SetSlot(r, art, Lit("Wall Art Print", Tint(ModelTex(id, "artwork_diff_1k.png"), 0.9f), Tex(ModelTex(id, "artwork_nor_gl_1k.png")), Color.white, 0.25f));
-            SetSlot(r, frameSlot, Lit("Wall Art Frame", Tex(ModelTex(id, "diff_1k.jpg")), Tex(ModelTex(id, "nor_gl_1k.exr")), Color.white, 0.45f));
-            var glassMat = Lit("Wall Art Glass", null, null, new Color(1f, 1f, 1f, 0.08f), 0.95f);
-            glassMat.SetFloat("_Surface", 1f);
-            glassMat.SetFloat("_Blend", 0f);
-            ApplyKeywords(glassMat);
-            SetSlot(r, glass, glassMat);
-            Zone(root, "Print", ZoneColorSource.Slot, PaletteSlot.Accent, new PaintableZone.Target(r, art));
-            Zone(root, "Frame", ZoneColorSource.Fixed, new PaintableZone.Target(r, frameSlot));
-            Zone(root, "Glass", ZoneColorSource.Fixed, new PaintableZone.Target(r, glass));
-            return Save(root, "Wall Art");
         }
 
         static GameObject BuildPillow()
@@ -359,14 +336,16 @@ namespace PaletteRoom.EditorTools
             return (root, model);
         }
 
-        static void Zone(GameObject root, string name, ZoneColorSource source, params PaintableZone.Target[] targets) =>
+        static PaintableZone Zone(GameObject root, string name, ZoneColorSource source, params PaintableZone.Target[] targets) =>
             Zone(root, name, source, PaletteSlot.Neutral, targets);
 
-        static void Zone(GameObject root, string name, ZoneColorSource source, PaletteSlot slot, params PaintableZone.Target[] targets)
+        static PaintableZone Zone(GameObject root, string name, ZoneColorSource source, PaletteSlot slot, params PaintableZone.Target[] targets)
         {
             var go = new GameObject(name);
             go.transform.SetParent(root.transform, false);
-            go.AddComponent<PaintableZone>().ConfigureExisting(name, source, slot, targets);
+            var zone = go.AddComponent<PaintableZone>();
+            zone.ConfigureExisting(name, source, slot, targets);
+            return zone;
         }
 
         static GameObject Save(GameObject root, string name)

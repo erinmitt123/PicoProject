@@ -67,6 +67,7 @@ namespace PaletteRoom
                 case FurnitureKind.Rug: RugPiece(b, variant); break;
                 case FurnitureKind.FloorLamp: FloorLamp(b); break;
                 case FurnitureKind.Bookshelf: Bookshelf(b, variant); break;
+                case FurnitureKind.WallArt: WallArt(b, variant); break;
                 default:
                     Debug.LogError($"[PaletteRoom] No prefab or builder for {kind}; run Palette Room ▸ Rebuild Furniture Assets.");
                     Sofa(b, FurnitureCatalog.Get(FurnitureKind.Sofa).Default);
@@ -108,6 +109,7 @@ namespace PaletteRoom
             float pitch = inner / seats;
             float extra = v.chaise ? Mathf.Max(0f, v.size.z - depth) : 0f;
 
+            // Frame (base, back, arms) and loose cushions are separate parts, so the user can color them apart.
             var body = new List<Part>
             {
                 Part.Box(new Vector3(0f, legs + 0.11f, 0f), new Vector3(width, 0.22f, depth), 0.04f),
@@ -115,13 +117,14 @@ namespace PaletteRoom
                 Part.Box(new Vector3(-(width - arm) / 2f, legs + 0.24f, 0f), new Vector3(arm, 0.48f, depth), 0.06f),
                 Part.Box(new Vector3((width - arm) / 2f, legs + 0.24f, 0f), new Vector3(arm, 0.48f, depth), 0.06f),
             };
+            var cushions = new List<Part>();
             for (int i = 0; i < seats; i++)
             {
                 float x = -inner / 2f + pitch * (i + 0.5f);
                 bool chaiseSeat = extra > 0f && i == 0;
                 float seatDepth = 0.64f + (chaiseSeat ? extra : 0f);
-                body.Add(Part.Box(new Vector3(x, legs + 0.295f, 0.08f + (chaiseSeat ? extra / 2f : 0f)), new Vector3(pitch - 0.01f, 0.15f, seatDepth), 0.06f, 0.015f));
-                body.Add(Part.Box(new Vector3(x, legs + 0.57f, -0.21f), new Vector3(pitch - 0.02f, 0.40f, 0.17f), 0.07f, 0.02f,
+                cushions.Add(Part.Box(new Vector3(x, legs + 0.295f, 0.08f + (chaiseSeat ? extra / 2f : 0f)), new Vector3(pitch - 0.01f, 0.15f, seatDepth), 0.06f, 0.015f));
+                cushions.Add(Part.Box(new Vector3(x, legs + 0.57f, -0.21f), new Vector3(pitch - 0.02f, 0.40f, 0.17f), 0.07f, 0.02f,
                     Quaternion.Euler(-12f, 0f, 0f)));
             }
 
@@ -140,7 +143,8 @@ namespace PaletteRoom
                 b.AddCollider(new Vector3(0f, 0.45f, 0f), new Vector3(width, 0.9f, depth));
                 b.AddCollider(new Vector3(cx, (legs + 0.45f) / 2f, depth / 2f + extra / 2f), new Vector3(chaiseW, legs + 0.45f, extra));
             }
-            b.Zone("Upholstery", ZoneColorSource.ItemRole, PaletteSlot.Dominant, Upholstery, body.ToArray());
+            b.Zone("Frame", ZoneColorSource.ItemRole, PaletteSlot.Dominant, Upholstery, body.ToArray());
+            b.Zone("Cushions", ZoneColorSource.ItemRole, PaletteSlot.Dominant, Upholstery, cushions.ToArray());
             b.Zone("Legs", ZoneColorSource.Fixed, PaletteSlot.Neutral, Oak, legParts.ToArray());
         }
 
@@ -158,11 +162,74 @@ namespace PaletteRoom
 
         void RugPiece(Builder b, FurnitureVariant v)
         {
-            // Bouclé field with a contrasting bound edge.
+            // A woven bouclé rug in four palette colors: a bound edge that runs right to the rug's
+            // outline, the field, an inset frame line, and banded stripes near the short ends. Pattern
+            // pieces sit a fraction of a millimetre proud of the field so they read as woven in.
+            float w = v.size.x, d = v.size.z;
+            const float edge = 0.04f, frameInset = 0.16f, line = 0.03f, field = 0.014f, raised = 0.0006f;
+
+            b.Zone("Edge", ZoneColorSource.Slot, PaletteSlot.Secondary, Rug,
+                Part.Box(new Vector3(0f, (field - 0.002f) / 2f, 0f), new Vector3(w, field - 0.002f, d), 0.004f));
             b.Zone("Field", ZoneColorSource.ItemRole, PaletteSlot.Dominant, Rug,
-                Part.Box(new Vector3(0f, 0.007f, 0f), new Vector3(v.size.x - 0.1f, 0.014f, v.size.z - 0.1f), 0.006f));
-            b.Zone("Border", ZoneColorSource.Slot, PaletteSlot.Neutral, Rug,
-                Part.Box(new Vector3(0f, 0.005f, 0f), new Vector3(v.size.x, 0.01f, v.size.z), 0.004f));
+                Part.Box(new Vector3(0f, field / 2f, 0f), new Vector3(w - 2f * edge, field, d - 2f * edge), 0.005f));
+
+            float fw = w - 2f * frameInset, fd = d - 2f * frameInset, top = field + raised;
+            b.Zone("Frame Line", ZoneColorSource.Slot, PaletteSlot.Accent, Rug,
+                Part.Box(new Vector3(0f, top / 2f, fd / 2f), new Vector3(fw, top, line), 0.002f),
+                Part.Box(new Vector3(0f, top / 2f, -fd / 2f), new Vector3(fw, top, line), 0.002f),
+                Part.Box(new Vector3(fw / 2f, top / 2f, 0f), new Vector3(line, top, fd), 0.002f),
+                Part.Box(new Vector3(-fw / 2f, top / 2f, 0f), new Vector3(line, top, fd), 0.002f));
+
+            // Two pairs of bands across the rug, inside the frame near each short end.
+            var bands = new List<Part>();
+            float bandLength = fw - 0.12f, bandWidth = 0.05f;
+            foreach (float end in new[] { -1f, 1f })
+            {
+                float x = end * (fw / 2f - 0.16f);
+                bands.Add(Part.Box(new Vector3(x, top / 2f, 0f), new Vector3(bandWidth, top, fd - 0.12f), 0.002f));
+                bands.Add(Part.Box(new Vector3(x - end * 0.09f, top / 2f, 0f), new Vector3(bandWidth * 0.5f, top, fd - 0.12f), 0.002f));
+            }
+            if (bandLength > 0.4f)
+                b.Zone("Bands", ZoneColorSource.Slot, PaletteSlot.Highlight, Rug, bands.ToArray());
+        }
+
+        void WallArt(Builder b, FurnitureVariant v)
+        {
+            // An abstract print in every palette color — sun, arch, block, bar and dot on a paper ground —
+            // in a thin black frame. Sized from A1 (59.4 × 84.1 cm) by the variant's scale. The root is the
+            // bottom-centre of the back face; the art faces +Z.
+            float s = v.scale.x;
+            float w = 0.594f * s, h = 0.841f * s, f = 0.022f * s, depth = 0.03f;
+            float iw = w - 2f * f, ih = h - 2f * f;
+
+            b.Zone("Frame", ZoneColorSource.Fixed, PaletteSlot.Neutral, Metal,
+                Part.Box(new Vector3(0f, f / 2f, depth / 2f), new Vector3(w, f, depth), 0.003f),
+                Part.Box(new Vector3(0f, h - f / 2f, depth / 2f), new Vector3(w, f, depth), 0.003f),
+                Part.Box(new Vector3(-(w - f) / 2f, h / 2f, depth / 2f), new Vector3(f, h, depth), 0.003f),
+                Part.Box(new Vector3((w - f) / 2f, h / 2f, depth / 2f), new Vector3(f, h, depth), 0.003f));
+            const float paperZ = 0.012f;
+            b.Zone("Paper", ZoneColorSource.Slot, PaletteSlot.Neutral, Paint,
+                Part.Box(new Vector3(0f, h / 2f, paperZ / 2f), new Vector3(iw, ih, paperZ), 0.001f));
+
+            // Composition in paper coordinates: u across (-0.5…0.5), t up (0…1).
+            Vector3 P(float u, float t, float layer) => new Vector3(u * iw, f + t * ih, paperZ + 0.0004f + layer * 0.0005f);
+            var face = Quaternion.Euler(90f, 0f, 0f);
+            Part Disc(float u, float t, float diameter, float layer) =>
+                new Part(Cylinder(), P(u, t, layer), face, new Vector3(diameter * iw, 0.0003f, diameter * iw));
+            Part Rect(float u, float t, float rw, float rh, float layer) =>
+                Part.Box(P(u, t, layer), new Vector3(rw * iw, rh * ih, 0.0006f), 0.0002f);
+
+            b.Zone("Arch", ZoneColorSource.Slot, PaletteSlot.Secondary, Paint,
+                Rect(-0.2f, 0.33f, 0.36f, 0.34f, 0f), Disc(-0.2f, 0.5f, 0.36f, 0f));
+            b.Zone("Block", ZoneColorSource.Slot, PaletteSlot.Dominant, Paint,
+                Rect(0.14f, 0.25f, 0.5f, 0.26f, 1f));
+            b.Zone("Sun", ZoneColorSource.ItemRole, PaletteSlot.Accent, Paint,
+                Disc(0.13f, 0.66f, 0.42f, 2f));
+            b.Zone("Bar", ZoneColorSource.Slot, PaletteSlot.Highlight, Paint,
+                Rect(0f, 0.11f, 0.78f, 0.035f, 3f));
+            b.Zone("Dot", ZoneColorSource.Slot, PaletteSlot.Accent, Paint,
+                Disc(-0.28f, 0.82f, 0.1f, 3f));
+            b.AddCollider(new Vector3(0f, h / 2f, depth / 2f), new Vector3(w, h, depth));
         }
 
         void FloorLamp(Builder b)
@@ -186,7 +253,8 @@ namespace PaletteRoom
             b.Zone("Fittings", ZoneColorSource.Fixed, PaletteSlot.Neutral, Metal,
                 new Part(MeshKit.Lathe(new[] { new Vector2(0.014f, 0f), new Vector2(0.014f, 0.17f) }, 12), new Vector3(0f, apex - 0.02f, 0f), Quaternion.identity),
                 new Part(MeshKit.Lathe(new[] { new Vector2(0.03f, 0f), new Vector2(0.03f, 0.04f) }, 16), new Vector3(0f, 1.36f, 0f), Quaternion.identity));
-            b.Zone("Bulb", ZoneColorSource.Fixed, PaletteSlot.Neutral, Bulb,
+            // The bulb stays a warm light; it isn't offered as a paintable part.
+            b.Zone("Bulb", ZoneColorSource.Fixed, PaletteSlot.Neutral, Bulb, false,
                 new Part(Sphere(), new Vector3(0f, 1.43f, 0f), Quaternion.identity, Vector3.one * 0.07f));
         }
 
@@ -272,20 +340,25 @@ namespace PaletteRoom
             };
         }
 
-        static Mesh s_Sphere;
+        static Mesh s_Sphere, s_Cylinder;
 
-        static Mesh Sphere()
+        static Mesh Sphere() => Primitive(PrimitiveType.Sphere, ref s_Sphere);
+
+        /// <summary>Unity's cylinder: 1 m across, 2 m tall along Y.</summary>
+        static Mesh Cylinder() => Primitive(PrimitiveType.Cylinder, ref s_Cylinder);
+
+        static Mesh Primitive(PrimitiveType type, ref Mesh cache)
         {
-            if (s_Sphere == null)
+            if (cache == null)
             {
-                var tmp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                s_Sphere = tmp.GetComponent<MeshFilter>().sharedMesh;
+                var tmp = GameObject.CreatePrimitive(type);
+                cache = tmp.GetComponent<MeshFilter>().sharedMesh;
                 if (Application.isPlaying)
                     Object.Destroy(tmp);
                 else
                     Object.DestroyImmediate(tmp);
             }
-            return s_Sphere;
+            return cache;
         }
 
         class Builder
@@ -317,7 +390,11 @@ namespace PaletteRoom
             public void Zone(string zoneName, ZoneColorSource source, PaletteSlot slot, Material template, Part part, bool doubleSided) =>
                 Zone(zoneName, source, slot, template, new[] { part }, doubleSided);
 
-            void Zone(string zoneName, ZoneColorSource source, PaletteSlot slot, Material template, Part[] parts, bool doubleSided)
+            /// <summary>A zone the user can't recolor (e.g. a light bulb) when <paramref name="allowOverride"/> is false.</summary>
+            public void Zone(string zoneName, ZoneColorSource source, PaletteSlot slot, Material template, bool allowOverride, params Part[] parts) =>
+                Zone(zoneName, source, slot, template, parts, false, allowOverride);
+
+            void Zone(string zoneName, ZoneColorSource source, PaletteSlot slot, Material template, Part[] parts, bool doubleSided, bool allowOverride = true)
             {
                 var zoneGo = new GameObject(zoneName);
                 zoneGo.transform.SetParent(Root.transform, false);
@@ -335,7 +412,9 @@ namespace PaletteRoom
                 var material = new Material(template) { name = $"{Root.name} {zoneName}" };
                 if (doubleSided)
                     material.SetFloat("_Cull", 0f);
-                zoneGo.AddComponent<PaintableZone>().Configure(zoneName, source, slot, material, targets);
+                var zone = zoneGo.AddComponent<PaintableZone>();
+                zone.Configure(zoneName, source, slot, material, targets);
+                zone.SetAllowOverride(allowOverride);
             }
 
             public FurnitureItem Finish(FurnitureMount mount)
@@ -375,6 +454,7 @@ namespace PaletteRoom
                 general.allowOneHandedScaling = false;
                 general.allowTwoHandedScaling = false;
                 root.AddComponent<FurnitureGrabTransformer>();
+                root.AddComponent<FurnitureClickDetector>();
             }
 
             Bounds LocalBounds()
