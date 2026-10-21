@@ -44,6 +44,9 @@ namespace PaletteRoom
         public FloorState State { get; private set; } = FloorState.Searching;
         public float FloorY => m_FloorY;
 
+        /// <summary>How far scanned surfaces must move vertically to line up with the floor the user sees.</summary>
+        public float ScanOffsetY { get; private set; }
+
         /// <summary>Raised whenever <see cref="State"/> or <see cref="FloorY"/> changes.</summary>
         public event Action<FloorDetector> FloorChanged;
 
@@ -144,6 +147,27 @@ namespace PaletteRoom
             float lowest = float.MaxValue;
             foreach (var y in m_FloorCandidates.Values)
                 lowest = Mathf.Min(lowest, y);
+
+            // With a floor-level tracking origin the runtime already knows the floor height (from the
+            // boundary set-up), and that is what the user sees as the floor. The scan can sit at a
+            // constant offset from it (0.40 m in the PICO Emulator), so the tracking floor wins and the
+            // difference is reported so scanned surfaces can be shifted to match.
+            if (xrOrigin != null && xrOrigin.CurrentTrackingOriginMode == UnityEngine.XR.TrackingOriginModeFlags.Floor)
+            {
+                float tracked = xrOrigin.transform.position.y;
+                float offset = tracked - lowest;
+                bool offsetChanged = Mathf.Abs(offset - ScanOffsetY) > 0.01f;
+                if (offsetChanged)
+                {
+                    ScanOffsetY = Mathf.Abs(offset) > 0.03f ? offset : 0f;
+                    Debug.Log($"[PaletteRoom] Scanned floor at y={lowest:F3}, tracking floor at y={tracked:F3}; shifting the scan by {ScanOffsetY:F3} m.");
+                }
+                bool stateChanged = State != FloorState.Detected || !Mathf.Approximately(tracked, m_FloorY);
+                SetState(FloorState.Detected, tracked);
+                if (offsetChanged && !stateChanged)
+                    FloorChanged?.Invoke(this); // the floor didn't move, but the scan has to
+                return;
+            }
             SetState(FloorState.Detected, lowest);
         }
 

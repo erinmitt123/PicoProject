@@ -806,7 +806,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PaletteRoom.SceneObstacles
   xrOrigin: {fileID: 0}
   floor: {fileID: 0}
-  minObstacleHeight: 0.12
+  minObstacleHeight: 0.04
   maxObstacleHeight: 1.6
   wallThickness: 0.06
 --- !u!1001 &1421788661

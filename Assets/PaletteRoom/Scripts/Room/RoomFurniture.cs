@@ -10,7 +10,7 @@ namespace PaletteRoom
     /// shopping list. All pieces live under one root that sits at floor height, so a floor change moves
     /// the whole room. Room-space coordinates are metres with +Z pointing away from the user.
     /// </summary>
-    public class RoomFurniture : MonoBehaviour
+    public partial class RoomFurniture : MonoBehaviour
     {
         [Tooltip("Models and materials for the catalog (Palette Room ▸ Rebuild Furniture Assets).")]
         [SerializeField] FurnitureLibrary library;
@@ -25,36 +25,6 @@ namespace PaletteRoom
         [SerializeField] float dropHeight = 0.35f;
         [SerializeField] float dropDuration = 0.45f;
         [SerializeField] float dropStagger = 0.06f;
-
-        struct Placement
-        {
-            public FurnitureKind kind;
-            public Vector3 position;
-            public float yaw;
-
-            public Placement(FurnitureKind kind, float x, float z, float yaw, float y = 0f)
-            {
-                this.kind = kind;
-                position = new Vector3(x, y, z);
-                this.yaw = yaw;
-            }
-        }
-
-        // Pieces face the user (yaw 180) unless angled toward the seating area.
-        // Pillows are listed back-to-back so the accent/highlight alternation gives them different colors.
-        static readonly Placement[] SampleLayout =
-        {
-            new Placement(FurnitureKind.Rug, 0f, 0.3f, 180f),
-            new Placement(FurnitureKind.Sofa, 0f, 1.1f, 180f),
-            new Placement(FurnitureKind.CoffeeTable, 0f, 0.25f, 180f),
-            new Placement(FurnitureKind.Armchair, -1.35f, 0.2f, 120f),
-            new Placement(FurnitureKind.Bookshelf, 2.1f, 0.4f, -120f),
-            new Placement(FurnitureKind.SideTable, 1.42f, 1.15f, 180f),
-            new Placement(FurnitureKind.FloorLamp, -1.25f, 1.3f, 180f),
-            new Placement(FurnitureKind.Plant, -2.15f, 1.25f, 180f),
-            new Placement(FurnitureKind.ThrowPillow, -0.62f, 1.14f, 180f, 0.47f),
-            new Placement(FurnitureKind.ThrowPillow, 0.62f, 1.14f, 180f, 0.47f),
-        };
 
         readonly List<FurnitureItem> m_Items = new List<FurnitureItem>();
         FurnitureFactory m_Factory;
@@ -89,61 +59,14 @@ namespace PaletteRoom
             return n;
         }
 
-        /// <summary>Replaces everything with the pre-arranged living room, centred in front of the user.</summary>
+        /// <summary>Replaces everything with the sample living room, laid out to fit the real room (see RoomFurniture.Layout.cs).</summary>
         public void SpawnSampleRoom(Transform head, float floorY)
         {
             Clear();
             var root = EnsureRoot(head, floorY);
-            var forward = FlatForward(head);
-            var centre = head.position + forward * distanceFromUser;
-            root.SetPositionAndRotation(new Vector3(centre.x, floorY, centre.z), Quaternion.LookRotation(forward, Vector3.up));
-
-            var added = new List<FurnitureItem>();
-            FurnitureItem bookshelf = null;
-            var sofaShift = Vector3.zero;
-            foreach (var p in SampleLayout)
-            {
-                var item = Factory.Create(p.kind, root);
-                item.transform.localPosition = p.position;
-                item.transform.localRotation = Quaternion.Euler(0f, p.yaw, 0f);
-                if (p.kind == FurnitureKind.ThrowPillow)
-                    item.transform.localRotation *= Quaternion.Euler(-15f, 0f, 0f); // lean back into the sofa
-                if (p.kind == FurnitureKind.Bookshelf)
-                    bookshelf = item;
-                var pose = item.transform;
-                if (p.kind == FurnitureKind.ThrowPillow)
-                {
-                    // Pillows sit on the sofa, so they go wherever the sofa ended up.
-                    pose.position += sofaShift;
-                }
-                else
-                {
-                    // Fit the layout to the real room: anything that collides (with other pieces, walls or real
-                    // furniture) or lands on the far side of a wall moves to the nearest free spot.
-                    bool misplaced = !IsFree(item, pose.position, pose.rotation) || BehindWall(head.position, pose.position);
-                    if (misplaced && TryFindFreeSpot(item, pose.position, pose.rotation, head.position, out var spot))
-                    {
-                        if (p.kind == FurnitureKind.Sofa)
-                            sofaShift = spot - pose.position;
-                        pose.position = spot;
-                    }
-                }
-                added.Add(item);
-                m_Items.Add(item);
-            }
-
-            // Wall art leans on top of the bookshelf, tilted back against an imagined wall.
-            var art = Factory.Create(FurnitureKind.WallArt, root);
-            var shelfBox = bookshelf.GetComponent<BoxCollider>();
-            float shelfTop = shelfBox.center.y + shelfBox.size.y / 2f;
-            float shelfBack = shelfBox.center.z - shelfBox.size.z / 2f;
-            art.transform.SetPositionAndRotation(
-                bookshelf.transform.TransformPoint(new Vector3(0f, shelfTop, shelfBack + 0.08f)),
-                bookshelf.transform.rotation * Quaternion.Euler(-8f, 0f, 0f));
-            added.Add(art);
-            m_Items.Add(art);
-
+            var added = LayOutSampleRoom(root, head, floorY);
             DropIn(added);
+            Debug.Log($"[PaletteRoom] Sample room placed at floor y={floorY:F3} (head y={head.position.y:F2}).");
             Changed?.Invoke();
         }
 
@@ -165,6 +88,8 @@ namespace PaletteRoom
                 Debug.LogWarning($"[PaletteRoom] No free floor space found for {item.DisplayName}; placed in front of the user.");
             item.transform.SetPositionAndRotation(spot, rotation);
             m_Items.Add(item);
+            if (kind == FurnitureKind.WallArt && !TryHangOnWall(item, head, floorY))
+                Debug.Log("[PaletteRoom] No scanned wall nearby for the art; it floats in front of the user.");
             DropIn(new List<FurnitureItem> { item });
             Changed?.Invoke();
             return item;
@@ -247,6 +172,7 @@ namespace PaletteRoom
                 return;
             var p = m_Root.position;
             m_Root.position = new Vector3(p.x, floorY, p.z);
+            Debug.Log($"[PaletteRoom] Floor moved to y={floorY:F3}; furniture follows.");
         }
 
         public void Clear()

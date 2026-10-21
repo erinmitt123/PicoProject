@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
@@ -7,53 +8,147 @@ namespace PaletteRoom
 {
     /// <summary>
     /// Runs after XRI's general grab transformer and enforces real-world placement: nothing goes below
-    /// the floor (the room root's height); floor pieces stay on it, only turn around the vertical axis, and can't be pushed
-    /// into other floor-standing pieces — a blocked move slides along the obstacle or holds at the last
-    /// valid pose. Wall pieces stay upright. Two-handed grabs rotate furniture in place.
+    /// the floor (the room root's height); floor pieces stay on it and only turn around the vertical
+    /// axis; wall pieces stay upright. While a floor piece is over a spot it can't stand on (another
+    /// piece, a wall, or real furniture such as a bed), it glows red, and dropping it there puts it back
+    /// where it was picked up.
     /// </summary>
     public class FurnitureGrabTransformer : XRBaseGrabTransformer
     {
+        static readonly Color Blocked = new Color(0.95f, 0.18f, 0.15f);
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
         FurnitureItem m_Item;
         XRGrabInteractable m_Grab;
         RoomFurniture m_Room;
-        bool m_Registered;
-        Pose m_LastValid;
-        bool m_StartedOverlapping;
+        Pose m_PickedUp;
+        bool m_Invalid;
+        bool m_Tinted;
+        MaterialPropertyBlock m_Block;
+        readonly List<Renderer> m_Renderers = new List<Renderer>();
 
-        // Registered manually on first grab so it is guaranteed to run after the general transformer.
+        // Added explicitly in Start (after XRI's own transformers), so it always runs last.
         protected override RegistrationMode registrationMode => RegistrationMode.None;
+
+        Transform m_RoomRoot;
 
         void Awake()
         {
             m_Item = GetComponent<FurnitureItem>();
             m_Grab = GetComponent<XRGrabInteractable>();
+            // Cached now, while the piece is still parented to the room: XRI unparents a piece for the
+            // duration of a grab, so the parent can't be asked during one.
+            m_RoomRoot = transform.parent;
+            m_Room = GetComponentInParent<RoomFurniture>();
+        }
+
+        /// <summary>The floor's height: the room root sits on it.</summary>
+        float FloorY => m_RoomRoot != null ? m_RoomRoot.position.y : 0f;
+
+        void Start()
+        {
+            if (m_Grab == null)
+                return;
+            m_Grab.AddSingleGrabTransformer(this);
+            m_Grab.AddMultipleGrabTransformer(this);
+        }
+
+        /// <summary>
+        /// XRI's general transformer registers itself in its own Start, so whether it lands before or
+        /// after this one varies between runs and devices. This one must run last or its floor and
+        /// placement rules are overwritten, so it moves itself to the end whenever a grab begins.
+        /// </summary>
+        void EnsureLast()
+        {
+            int single = m_Grab.singleGrabTransformersCount;
+            if (single > 0 && !ReferenceEquals(m_Grab.GetSingleGrabTransformerAt(single - 1), this))
+                m_Grab.MoveSingleGrabTransformerTo(this, single - 1);
+            int multiple = m_Grab.multipleGrabTransformersCount;
+            if (multiple > 0 && !ReferenceEquals(m_Grab.GetMultipleGrabTransformerAt(multiple - 1), this))
+                m_Grab.MoveMultipleGrabTransformerTo(this, multiple - 1);
+        }
+
+        // Pieces resting on this one (pillows on a sofa) move with it; grabbing a pillow moves only the pillow.
+        readonly List<(Transform rider, Vector3 localPos, Quaternion localRot)> m_Riders = new List<(Transform, Vector3, Quaternion)>();
+
+        void CollectRiders()
+        {
+            m_Riders.Clear();
+            if (m_Room == null || m_Item.Mount != FurnitureMount.Floor)
+                return;
+            var mine = m_Item.CurrentFootprints;
+            float floorY = FloorY;
+            foreach (var other in m_Room.Items)
+            {
+                if (other == null || other == m_Item || other.Mount != FurnitureMount.Free)
+                    continue;
+                var p = other.transform.position;
+                if (p.y < floorY + 0.1f)
+                    continue; // on the floor beside it, not on it
+                var point = new[] { new Footprint(new Vector2(p.x, p.z), Vector2.right, Vector2.up, Vector2.one * 0.01f) };
+                // Offsets ignore scale, so a piece still scaling in from its drop-in animation carries correctly.
+                var inverse = Quaternion.Inverse(transform.rotation);
+                if (FurnitureItem.Overlap(mine, point))
+                    m_Riders.Add((other.transform, inverse * (p - transform.position), inverse * other.transform.rotation));
+            }
+        }
+
+        void MoveRiders()
+        {
+            foreach (var (rider, localPos, localRot) in m_Riders)
+                if (rider != null)
+                    rider.SetPositionAndRotation(transform.position + transform.rotation * localPos, transform.rotation * localRot);
+        }
+
+        void LateUpdate()
+        {
+            if (m_Riders.Count > 0 && m_Grab != null && m_Grab.isSelected)
+                MoveRiders();
         }
 
         void OnEnable()
         {
-            if (m_Grab != null)
-                m_Grab.selectEntered.AddListener(OnSelectEntered);
+            if (m_Grab == null)
+                return;
+            m_Grab.selectEntered.AddListener(OnSelectEntered);
+            m_Grab.selectExited.AddListener(OnSelectExited);
         }
 
         void OnDisable()
         {
-            if (m_Grab != null)
-                m_Grab.selectEntered.RemoveListener(OnSelectEntered);
+            if (m_Grab == null)
+                return;
+            m_Grab.selectEntered.RemoveListener(OnSelectEntered);
+            m_Grab.selectExited.RemoveListener(OnSelectExited);
+            SetTint(false);
         }
 
         void OnSelectEntered(SelectEnterEventArgs args)
         {
-            if (!m_Registered)
+            if (m_Grab.interactorsSelecting.Count > 1)
+                return; // a second hand joining keeps the original pick-up pose
+            EnsureLast();
+            m_PickedUp = new Pose(transform.position, transform.rotation);
+            m_Invalid = false;
+            CollectRiders();
+        }
+
+        void OnSelectExited(SelectExitEventArgs args)
+        {
+            if (m_Grab.isSelected)
+                return;
+            if (m_Invalid)
             {
-                m_Grab.AddSingleGrabTransformer(this);
-                m_Grab.AddMultipleGrabTransformer(this);
-                m_Registered = true;
+                // Dropped on a spot it can't stand on: back to where it was picked up, and the red lifts.
+                transform.SetPositionAndRotation(m_PickedUp.position, m_PickedUp.rotation);
+                Debug.Log($"[PaletteRoom] {m_Item.DisplayName} can't go there; returned to its last spot.");
             }
-            if (m_Room == null)
-                m_Room = GetComponentInParent<RoomFurniture>();
-            m_LastValid = new Pose(transform.position, transform.rotation);
-            // A piece that already overlaps (e.g. from an older layout) may move freely until it's clear.
-            m_StartedOverlapping = m_Room != null && !m_Room.IsFree(m_Item, m_LastValid.position, m_LastValid.rotation);
+            MoveRiders();
+            float floorY = FloorY;
+            Debug.Log($"[PaletteRoom] {m_Item.DisplayName} set down at y={transform.position.y:F3} (floor {floorY:F3}), carrying {m_Riders.Count}.");
+            m_Riders.Clear();
+            m_Invalid = false;
+            SetTint(false);
         }
 
         public override void Process(XRGrabInteractable grabInteractable, XRInteractionUpdateOrder.UpdatePhase updatePhase,
@@ -63,7 +158,7 @@ namespace PaletteRoom
                 return;
 
             // Every root sits at the piece's bottom, so nothing may go below the floor (the room root's height).
-            float floorY = transform.parent != null ? transform.parent.position.y : 0f;
+            float floorY = FloorY;
             var p = targetPose.position;
             if (m_Item.Mount == FurnitureMount.Floor)
                 p.y = floorY;
@@ -79,41 +174,32 @@ namespace PaletteRoom
 
             if (m_Room == null || !m_Item.BlocksFloor)
                 return;
-
-            if (m_StartedOverlapping)
-            {
-                if (m_Room.IsFree(m_Item, targetPose.position, targetPose.rotation))
-                {
-                    m_StartedOverlapping = false;
-                    m_LastValid = targetPose;
-                }
-                return;
-            }
-
-            targetPose = Resolve(targetPose);
-            m_LastValid = targetPose;
+            m_Invalid = !m_Room.IsFree(m_Item, targetPose.position, targetPose.rotation);
+            SetTint(m_Invalid);
         }
 
-        /// <summary>The wanted pose if it's free; otherwise slide along one axis; otherwise stay put.</summary>
-        Pose Resolve(Pose wanted)
+        /// <summary>Shows the piece red (without touching its palette materials) while it's over a bad spot.</summary>
+        void SetTint(bool on)
         {
-            if (m_Room.IsFree(m_Item, wanted.position, wanted.rotation))
-                return wanted;
-
-            // Keep the rotation that was last valid while sliding, so a blocked turn doesn't jitter.
-            var rot = m_LastValid.rotation;
-            var p = m_LastValid.position;
-            var slideX = new Vector3(wanted.position.x, p.y, p.z);
-            var slideZ = new Vector3(p.x, p.y, wanted.position.z);
-            bool xFree = m_Room.IsFree(m_Item, slideX, rot);
-            bool zFree = m_Room.IsFree(m_Item, slideZ, rot);
-            if (xFree && zFree)
-                return Mathf.Abs(wanted.position.x - p.x) >= Mathf.Abs(wanted.position.z - p.z) ? new Pose(slideX, rot) : new Pose(slideZ, rot);
-            if (xFree)
-                return new Pose(slideX, rot);
-            if (zFree)
-                return new Pose(slideZ, rot);
-            return m_LastValid;
+            if (on == m_Tinted)
+                return;
+            m_Tinted = on;
+            if (m_Block == null)
+                m_Block = new MaterialPropertyBlock();
+            GetComponentsInChildren(m_Renderers);
+            foreach (var r in m_Renderers)
+            {
+                if (!on)
+                {
+                    r.SetPropertyBlock(null);
+                    continue;
+                }
+                var mat = r.sharedMaterial;
+                var baseColor = mat != null && mat.HasProperty(BaseColorId) ? mat.GetColor(BaseColorId) : Color.white;
+                m_Block.Clear();
+                m_Block.SetColor(BaseColorId, Color.Lerp(baseColor, Blocked, 0.7f));
+                r.SetPropertyBlock(m_Block);
+            }
         }
     }
 }

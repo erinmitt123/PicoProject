@@ -36,6 +36,8 @@ namespace PaletteRoom
         Camera m_Camera;
         MovablePanel m_DockPanel;
         ObjectColorPanel m_ObjectColor;
+        RoomColorScanner m_ColorScanner;
+        RoomMatchBanner m_MatchBanner;
 
         bool TestModeActive => Application.isEditor && editorTestMode && !XRSettings.isDeviceActive;
 
@@ -85,6 +87,15 @@ namespace PaletteRoom
             colorGo.SetActive(false);
             FurnitureClickDetector.Clicked += OpenObjectColor;
 
+            // On start-up, read the room's colors and switch to the palette that suits them best.
+            var bannerGo = new GameObject("Room Match Banner");
+            bannerGo.transform.SetParent(transform, false);
+            m_MatchBanner = bannerGo.AddComponent<RoomMatchBanner>();
+            m_MatchBanner.Build(m_Camera);
+            m_ColorScanner = gameObject.AddComponent<RoomColorScanner>();
+            m_ColorScanner.Matched += OnRoomColorsMatched;
+            m_ColorScanner.Failed += _ => m_MatchBanner.ShowUnavailable(m_Palettes.Current);
+
             m_Floor.FloorChanged += OnFloorChanged;
         }
 
@@ -119,6 +130,13 @@ namespace PaletteRoom
                 yield return null;
             yield return null;
             welcomePanel.Show();
+            m_ColorScanner.Scan();
+        }
+
+        void OnRoomColorsMatched(RoomColorScanner.Match match)
+        {
+            m_Palettes.SetPalette(match.palette);
+            m_MatchBanner.Show(match);
         }
 
         void StartSampleRoom()
