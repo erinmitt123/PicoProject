@@ -6,34 +6,52 @@ using UnityEngine.UI;
 namespace PaletteRoom
 {
     /// <summary>
-    /// First thing the user sees: what the app does, floor status, and "Start with a sample room".
-    /// Spawns in front of the user at a comfortable height.
+    /// First thing the user sees: what the app does, floor and room-scan status, "Start in my room" and
+    /// "Start with a sample room", and buttons to scan the room (PICO Room Capture) or set the floor by
+    /// tapping it. Spawns in front of the user at a comfortable height.
     /// </summary>
     public class WelcomePanel : MonoBehaviour
     {
-        const float Width = 520f, Height = 430f, Pad = 32f;
+        const float Width = 520f, Height = 590f, Pad = 32f;
 
         [SerializeField] float distance = 1.1f;
         [SerializeField] float belowEyes = 0.15f;
 
+        static readonly Color Good = new Color(0.36f, 0.7f, 0.45f);
+        static readonly Color Waiting = new Color(0.6f, 0.6f, 0.62f);
+        static readonly Color Attention = new Color(0.95f, 0.65f, 0.2f);
+        static readonly Color EditorBlue = new Color(0.4f, 0.55f, 0.85f);
+
         Canvas m_Canvas;
         TextMeshProUGUI m_FloorStatus;
         Image m_FloorDot;
+        TextMeshProUGUI m_RoomStatus;
+        Image m_RoomDot;
         TextMeshProUGUI m_Body;
         Button m_StartButton;
+        Button m_MyRoomButton;
         Button m_FloorButton;
+        Button m_ScanButton;
         TextMeshProUGUI m_FloorButtonLabel;
+        TextMeshProUGUI m_ScanButtonLabel;
         FloorDetector m_Floor;
         FloorTapCalibrator m_Calibrator;
+        SceneObstacles m_Scene;
+        RoomScanner m_Scanner;
         Transform m_Head;
+        bool m_SuggestScan;
 
         public event Action StartSampleRoomRequested;
+        /// <summary>Straight into the user's own room: no sample furniture, just the dock.</summary>
+        public event Action StartMyRoomRequested;
 
-        public void Build(Camera eventCamera, FloorDetector floor, FloorTapCalibrator calibrator)
+        public void Build(Camera eventCamera, FloorDetector floor, FloorTapCalibrator calibrator, SceneObstacles scene, RoomScanner scanner)
         {
             m_Head = eventCamera.transform;
             m_Floor = floor;
             m_Calibrator = calibrator;
+            m_Scene = scene;
+            m_Scanner = scanner;
 
             m_Canvas = UIKit.CreateWorldCanvas("Welcome Canvas", new Vector2(Width, Height), transform, eventCamera);
             var root = m_Canvas.transform;
@@ -49,20 +67,37 @@ namespace PaletteRoom
                 21f, UIKit.MutedTextColor);
             UIKit.Place(m_Body.rectTransform, Pad, Pad + 66f, Width - 2 * Pad, 100f);
 
-            m_FloorDot = UIKit.Panel(panel.transform, "Floor Dot", Color.gray, 7f);
-            UIKit.Place(m_FloorDot.rectTransform, Pad, Pad + 183f, 14f, 14f);
-            m_FloorStatus = UIKit.Label(panel.transform, "Floor Status", string.Empty, 19f, UIKit.TextColor);
-            UIKit.Place(m_FloorStatus.rectTransform, Pad + 24f, Pad + 176f, Width - 2 * Pad - 24f, 52f);
+            m_RoomDot = UIKit.Panel(panel.transform, "Room Dot", Waiting, 7f);
+            UIKit.Place(m_RoomDot.rectTransform, Pad, Pad + 183f, 14f, 14f);
+            m_RoomStatus = UIKit.Label(panel.transform, "Room Status", string.Empty, 19f, UIKit.TextColor);
+            UIKit.Place(m_RoomStatus.rectTransform, Pad + 24f, Pad + 176f, Width - 2 * Pad - 24f, 52f);
 
-            m_StartButton = UIKit.Button(panel.transform, "Start Sample Room", "Start with a sample room", 24f, true, OnStartPressed);
-            UIKit.Place((RectTransform)m_StartButton.transform, Pad, Height - Pad - 134f, Width - 2 * Pad, 70f);
+            m_FloorDot = UIKit.Panel(panel.transform, "Floor Dot", Waiting, 7f);
+            UIKit.Place(m_FloorDot.rectTransform, Pad, Pad + 243f, 14f, 14f);
+            m_FloorStatus = UIKit.Label(panel.transform, "Floor Status", string.Empty, 19f, UIKit.TextColor);
+            UIKit.Place(m_FloorStatus.rectTransform, Pad + 24f, Pad + 236f, Width - 2 * Pad - 24f, 52f);
+
+            m_MyRoomButton = UIKit.Button(panel.transform, "Start My Room", "Start in my room", 24f, true, () => StartMyRoomRequested?.Invoke());
+            UIKit.Place((RectTransform)m_MyRoomButton.transform, Pad, Height - Pad - 212f, Width - 2 * Pad, 70f);
+
+            m_StartButton = UIKit.Button(panel.transform, "Start Sample Room", "Start with a sample room", 21f, false, OnStartPressed);
+            UIKit.Place((RectTransform)m_StartButton.transform, Pad, Height - Pad - 134f, Width - 2 * Pad, 64f);
+
+            float half = (Width - 2 * Pad - 12f) / 2f;
+            m_ScanButton = UIKit.Button(panel.transform, "Scan Room", "Scan my room", 19f, false, OnScanPressed);
+            UIKit.Place((RectTransform)m_ScanButton.transform, Pad, Height - Pad - 56f, half, 50f);
+            m_ScanButtonLabel = m_ScanButton.GetComponentInChildren<TextMeshProUGUI>();
 
             m_FloorButton = UIKit.Button(panel.transform, "Set Floor", "Set floor height", 19f, false, OnFloorButtonPressed);
-            UIKit.Place((RectTransform)m_FloorButton.transform, Pad, Height - Pad - 56f, Width - 2 * Pad, 50f);
+            UIKit.Place((RectTransform)m_FloorButton.transform, Pad + half + 12f, Height - Pad - 56f, half, 50f);
             m_FloorButtonLabel = m_FloorButton.GetComponentInChildren<TextMeshProUGUI>();
 
             m_Floor.FloorChanged += _ => Refresh();
             m_Calibrator.Completed += Refresh;
+            if (m_Scene != null)
+                m_Scene.Changed += Refresh;
+            if (m_Scanner != null)
+                m_Scanner.Finished += _ => Refresh();
             Refresh();
         }
 
@@ -80,6 +115,13 @@ namespace PaletteRoom
             gameObject.SetActive(false);
         }
 
+        /// <summary>No room set-up was found: ask the user to scan their room before starting.</summary>
+        public void SuggestScan()
+        {
+            m_SuggestScan = true;
+            Refresh();
+        }
+
         void PlaceInFront()
         {
             var forward = Vector3.ProjectOnPlane(m_Head.forward, Vector3.up);
@@ -93,6 +135,14 @@ namespace PaletteRoom
         void OnStartPressed()
         {
             StartSampleRoomRequested?.Invoke();
+        }
+
+        void OnScanPressed()
+        {
+            if (m_Calibrator.IsActive)
+                m_Calibrator.Cancel();
+            m_Scanner.Launch();
+            Refresh();
         }
 
         void OnFloorButtonPressed()
@@ -109,39 +159,81 @@ namespace PaletteRoom
             if (m_Floor == null || m_FloorStatus == null)
                 return;
 
+            RefreshRoom();
+
+            bool scanning = m_Scanner != null && m_Scanner.Busy;
+            m_ScanButton.interactable = RoomScanner.Available && !scanning && !m_Calibrator.IsActive;
+            m_ScanButtonLabel.text = scanning ? "Scanning…" : HasRoomScan ? "Rescan room" : "Scan my room";
+            // When there's no room set-up, scanning is the thing to do first.
+            m_ScanButton.colors = m_SuggestScan && !HasRoomScan ? UIKit.PrimaryColors() : UIKit.SecondaryColors();
+            m_ScanButtonLabel.color = m_SuggestScan && !HasRoomScan ? Color.white : UIKit.TextColor;
+
             if (m_Calibrator.IsActive)
             {
-                m_FloorDot.color = new Color(0.95f, 0.65f, 0.2f);
+                m_FloorDot.color = Attention;
                 m_FloorStatus.text = "Touch the floor with a hand or controller, or point at it, then pinch or pull the trigger.";
                 m_FloorButtonLabel.text = "Cancel";
                 m_StartButton.interactable = false;
+                m_MyRoomButton.interactable = false;
                 return;
             }
 
-            m_StartButton.interactable = true;
+            m_StartButton.interactable = !scanning;
+            m_MyRoomButton.interactable = !scanning;
             m_FloorButtonLabel.text = "Set floor height";
             switch (m_Floor.State)
             {
                 case FloorState.Searching:
-                    m_FloorDot.color = new Color(0.6f, 0.6f, 0.62f);
+                    m_FloorDot.color = Waiting;
                     m_FloorStatus.text = "Looking for your floor…";
                     break;
                 case FloorState.Detected:
-                    m_FloorDot.color = new Color(0.36f, 0.7f, 0.45f);
+                    m_FloorDot.color = Good;
                     m_FloorStatus.text = "Floor detected";
                     break;
                 case FloorState.NotFound:
-                    m_FloorDot.color = new Color(0.95f, 0.65f, 0.2f);
-                    m_FloorStatus.text = "Couldn't detect the floor. Tap it to set the height.";
+                    m_FloorDot.color = Attention;
+                    m_FloorStatus.text = "Couldn't detect the floor. Scan your room, or tap the floor to set the height.";
                     break;
                 case FloorState.SetByTap:
-                    m_FloorDot.color = new Color(0.36f, 0.7f, 0.45f);
+                    m_FloorDot.color = Good;
                     m_FloorStatus.text = "Floor height set";
                     break;
                 case FloorState.Simulated:
-                    m_FloorDot.color = new Color(0.4f, 0.55f, 0.85f);
+                    m_FloorDot.color = EditorBlue;
                     m_FloorStatus.text = "Editor test mode: using the tracking floor";
                     break;
+            }
+        }
+
+        bool HasRoomScan => m_Scene != null && m_Scene.WallCount > 0;
+
+        void RefreshRoom()
+        {
+            if (!RoomScanner.Available)
+            {
+                m_RoomDot.color = EditorBlue;
+                m_RoomStatus.text = "Editor: room scanning runs on the headset";
+            }
+            else if (m_Scanner != null && m_Scanner.Busy)
+            {
+                m_RoomDot.color = Waiting;
+                m_RoomStatus.text = "Scanning your room in PICO room set-up…";
+            }
+            else if (HasRoomScan)
+            {
+                m_RoomDot.color = Good;
+                m_RoomStatus.text = $"Room scanned: {m_Scene.WallCount} wall{(m_Scene.WallCount == 1 ? "" : "s")}, {m_Scene.FurnitureCount} real furniture";
+            }
+            else if (m_SuggestScan)
+            {
+                m_RoomDot.color = Attention;
+                m_RoomStatus.text = "No room set-up found. Scan your room so furniture fits around your walls and real furniture.";
+            }
+            else
+            {
+                m_RoomDot.color = Waiting;
+                m_RoomStatus.text = "Loading your room set-up…";
             }
         }
     }

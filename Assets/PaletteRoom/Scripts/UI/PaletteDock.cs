@@ -8,7 +8,8 @@ namespace PaletteRoom
 {
     /// <summary>
     /// The palette panel: filter chips (by color-wheel harmony, or just the user's own), a scrolling grid
-    /// of palette cards with five swatches each, and buttons for the color wheel, shopping list and floor.
+    /// of palette cards with five swatches each, and buttons for the color wheel, shopping list, design
+    /// briefs, lookbook and floor.
     /// Palettes the user saves on the color wheel appear here alongside the presets. Picking a card
     /// restyles the room.
     /// </summary>
@@ -49,6 +50,8 @@ namespace PaletteRoom
 
         public event Action ColorWheelRequested;
         public event Action ShoppingListRequested;
+        public event Action BriefsRequested;
+        public event Action LookbookRequested;
 
         public void Build(Camera eventCamera, PaletteManager palettes, FloorTapCalibrator calibrator)
         {
@@ -66,7 +69,8 @@ namespace PaletteRoom
             float gridY = chipsY + chipsH + Gap;
             float gridH = 3.5f * (CardH + Gap); // a partly visible fourth row shows there's more to scroll
             float buttonsY = gridY + gridH + Gap;
-            float floorY = buttonsY + ButtonH + Gap;
+            float goalsY = buttonsY + ButtonH + Gap;
+            float floorY = goalsY + ButtonH + Gap;
             float height = floorY + ButtonH + Pad;
 
             var canvas = UIKit.CreateWorldCanvas("Palette Dock Canvas", new Vector2(width, height), transform, eventCamera);
@@ -101,6 +105,10 @@ namespace PaletteRoom
             UIKit.Place((RectTransform)wheel.transform, Pad, buttonsY, half, ButtonH);
             var shop = UIKit.Button(p, "Shopping List", "Shopping list", 10f, false, () => ShoppingListRequested?.Invoke());
             UIKit.Place((RectTransform)shop.transform, Pad + half + Gap, buttonsY, half, ButtonH);
+            var briefs = UIKit.Button(p, "Design Briefs", "Design briefs", 10f, false, () => BriefsRequested?.Invoke());
+            UIKit.Place((RectTransform)briefs.transform, Pad, goalsY, half, ButtonH);
+            var lookbook = UIKit.Button(p, "Lookbook", "Lookbook", 10f, false, () => LookbookRequested?.Invoke());
+            UIKit.Place((RectTransform)lookbook.transform, Pad + half + Gap, goalsY, half, ButtonH);
 
             var floor = UIKit.Button(p, "Set Floor", "Set floor height", 10f, false, OnFloorPressed);
             UIKit.Place((RectTransform)floor.transform, Pad, floorY, width - 2 * Pad, ButtonH);
@@ -137,6 +145,7 @@ namespace PaletteRoom
             button.targetGraphic = card;
             button.colors = UIKit.SecondaryColors();
             button.onClick.AddListener(() => m_Palettes.SetPalette(palette));
+            card.gameObject.AddComponent<ForgivingClick>();
 
             var name = UIKit.Label(card.transform, "Name", palette.name, 9.5f, UIKit.TextColor, style: FontStyles.Bold);
             name.textWrappingMode = TextWrappingModes.NoWrap;

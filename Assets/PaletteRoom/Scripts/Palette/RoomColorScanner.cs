@@ -28,6 +28,56 @@ namespace PaletteRoom
         {
             public ColorPalette palette;
             public RoomColor[] roomColors;
+            /// <summary>True when the colors came from the PICO Emulator's built-in room, not a live camera.</summary>
+            public bool fromEmulatorScene;
+        }
+
+        /// <summary>
+        /// The PICO Emulator's simulated bedroom, measured from its passthrough view (k-means over a
+        /// 60×60 grid, app UI excluded). The emulator has no camera image access, so these stand in for
+        /// a live reading there.
+        /// </summary>
+        static readonly (string hex, float share)[] EmulatorBedroom =
+        {
+            ("#99938C", 0.220f), // warm grey: bedding, plaster in shade
+            ("#C7C1BB", 0.216f), // off-white walls and ceiling
+            ("#443A30", 0.190f), // walnut platform bed and floor
+            ("#6C6D68", 0.167f), // grey-green throw and shadows
+            ("#24211D", 0.142f), // charcoal: frame, vases, dark corners
+            ("#7A5E4A", 0.065f), // mid wood: shelves, lamp base
+        };
+
+        /// <summary>
+        /// The PICO Emulator reports an x86-64 model (e.g. "swan_oversea_x86_64"); PICO headsets are ARM.
+        /// The app's ARM code runs there through a translator, so the process architecture alone can't tell.
+        /// </summary>
+        public static bool IsEmulator
+        {
+            get
+            {
+                if (Application.platform != RuntimePlatform.Android)
+                    return false;
+                var model = SystemInfo.deviceModel.ToLowerInvariant();
+                return model.Contains("x86") || model.Contains("emulator") ||
+                       System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.X64;
+            }
+        }
+
+        static List<Color> EmulatorSamples()
+        {
+            var samples = new List<Color>();
+            var random = new System.Random(7);
+            foreach (var (hex, share) in EmulatorBedroom)
+            {
+                ColorUtility.TryParseHtmlString(hex, out var c);
+                int n = Mathf.RoundToInt(share * 2000f);
+                for (int i = 0; i < n; i++)
+                {
+                    float k = 0.95f + (float)random.NextDouble() * 0.1f; // a little lighting variation
+                    samples.Add(new Color(c.r * k, c.g * k, c.b * k));
+                }
+            }
+            return samples;
         }
 
         const int Clusters = 6;
@@ -45,12 +95,21 @@ namespace PaletteRoom
             try
             {
                 var samples = await CaptureSamples();
+                bool emulator = false;
+                if ((samples == null || samples.Count < 50) && IsEmulator)
+                {
+                    Debug.Log("[PaletteRoom] No camera access in the PICO Emulator; matching to its built-in bedroom's measured colors.");
+                    samples = EmulatorSamples();
+                    emulator = true;
+                }
                 if (samples == null || samples.Count < 50)
                 {
                     Failed?.Invoke("Couldn't read the camera");
                     return;
                 }
-                Matched?.Invoke(MatchColors(samples));
+                var match = MatchColors(samples);
+                match.fromEmulatorScene = emulator;
+                Matched?.Invoke(match);
             }
             catch (Exception e)
             {

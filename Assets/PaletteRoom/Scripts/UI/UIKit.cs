@@ -66,6 +66,85 @@ namespace PaletteRoom
             }
         }
 
+        static Sprite s_Star;
+        static readonly Color StarOn = new Color(0.93f, 0.66f, 0.16f);
+        static readonly Color StarOff = new Color(0.82f, 0.81f, 0.79f);
+
+        /// <summary>A five-point star, drawn in code (the UI font has no star glyph).</summary>
+        public static Sprite StarSprite
+        {
+            get
+            {
+                if (s_Star != null)
+                    return s_Star;
+                const int size = 64, samples = 4;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+                var points = new Vector2[10];
+                for (int i = 0; i < 10; i++)
+                {
+                    float a = Mathf.PI / 2f + i * Mathf.PI / 5f;
+                    float r = i % 2 == 0 ? 0.48f : 0.2f;
+                    points[i] = new Vector2(0.5f + Mathf.Cos(a) * r, 0.47f + Mathf.Sin(a) * r);
+                }
+                var pixels = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    int inside = 0;
+                    for (int sy = 0; sy < samples; sy++)
+                    for (int sx = 0; sx < samples; sx++)
+                    {
+                        var p = new Vector2((x + (sx + 0.5f) / samples) / size, (y + (sy + 0.5f) / samples) / size);
+                        if (InPolygon(p, points))
+                            inside++;
+                    }
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(255 * inside / (samples * samples)));
+                }
+                tex.SetPixels32(pixels);
+                tex.Apply();
+                s_Star = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+                s_Star.name = "PaletteRoom Star";
+                return s_Star;
+            }
+        }
+
+        static bool InPolygon(Vector2 p, Vector2[] poly)
+        {
+            bool inside = false;
+            for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+            {
+                if ((poly[i].y > p.y) != (poly[j].y > p.y) &&
+                    p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
+        /// <summary>Three stars in a row at (x, y), each <paramref name="size"/> mm; set how many are earned with <see cref="SetStars"/>.</summary>
+        public static Image[] StarRow(Transform parent, float x, float y, float size)
+        {
+            var row = new Image[3];
+            for (int i = 0; i < 3; i++)
+            {
+                var go = new GameObject($"Star {i + 1}", typeof(RectTransform));
+                go.transform.SetParent(parent, false);
+                var image = go.AddComponent<Image>();
+                image.sprite = StarSprite;
+                image.preserveAspect = true;
+                image.raycastTarget = false;
+                image.color = StarOff;
+                Place(image.rectTransform, x + i * (size + 2f), y, size, size);
+                row[i] = image;
+            }
+            return row;
+        }
+
+        public static void SetStars(Image[] row, int earned)
+        {
+            for (int i = 0; i < row.Length; i++)
+                row[i].color = i < earned ? StarOn : StarOff;
+        }
+
         public static Canvas CreateWorldCanvas(string name, Vector2 sizeMm, Transform parent, Camera eventCamera)
         {
             var go = new GameObject(name, typeof(RectTransform));
@@ -152,6 +231,7 @@ namespace PaletteRoom
             button.colors = primary ? PrimaryColors() : SecondaryColors();
             if (onClick != null)
                 button.onClick.AddListener(onClick);
+            bg.gameObject.AddComponent<ForgivingClick>();
 
             var label = Label(bg.transform, "Label", text, textSizeMm, primary ? Color.white : TextColor,
                 TextAlignmentOptions.Center, FontStyles.Bold);

@@ -31,9 +31,9 @@ MonoBehaviour:
   stageMode: 0
   videoSeeThrough: 1
   spatialAnchor: 0
-  sceneCapture: 0
+  sceneCapture: 1
   sharedAnchor: 0
-  spatialMesh: 0
+  spatialMesh: 1
   planeDetection: 1
   secureMR: 0
   meshLod: 0
@@ -42,7 +42,7 @@ MonoBehaviour:
   qualitySharpening: 0
   fixedFoveatedSharpening: 0
   selfAdaptiveSharpening: 0
-  handTrackingSupportType: 0
+  handTrackingSupportType: 1
   environmentDepth: 0
   lightEstimation: 0
   lightEstimationTextureResolution: 0

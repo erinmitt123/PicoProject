@@ -290,6 +290,7 @@ namespace PaletteRoom
             button.targetGraphic = card;
             button.colors = UIKit.SecondaryColors();
             button.onClick.AddListener(() => OnSuggestion(index));
+            card.gameObject.AddComponent<ForgivingClick>();
 
             var name = UIKit.Label(card.transform, "Name", string.Empty, 11f, UIKit.TextColor, style: FontStyles.Bold);
             name.textWrappingMode = TextWrappingModes.NoWrap;
@@ -332,6 +333,7 @@ namespace PaletteRoom
             // Tint transitions would distort the swatch color, so press feedback comes from the ring instead.
             button.transition = Selectable.Transition.None;
             button.onClick.AddListener(() => OnSlot(index));
+            swatch.gameObject.AddComponent<ForgivingClick>();
             m_SlotSwatches[index] = swatch;
 
             var label = UIKit.Label(parent, $"{Slots[index]} Label", Slots[index].ToString(), 9.5f, UIKit.MutedTextColor,

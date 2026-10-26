@@ -36,12 +36,60 @@ namespace PaletteRoom
         /// <summary>Raised whenever pieces are added or removed.</summary>
         public event Action Changed;
 
+        /// <summary>The plain URP Lit material the room is built from.</summary>
+        public Material BaseMaterial => baseMaterial;
+
         FurnitureFactory Factory => m_Factory ?? (m_Factory = new FurnitureFactory(library, baseMaterial));
+
+        // The sample room as first laid out, before the user has touched anything: if the 3D room scan
+        // arrives (or changes) afterwards and shows a piece standing in something real, it is laid out again.
+        bool m_Pristine;
+        Transform m_LayoutHead;
+        int m_Relayouts;
+        const int MaxRelayouts = 2;
+
+        /// <summary>Real geometry this high above the floor or lower (table tops, bed frames) keeps floor pieces out from under it.</summary>
+        const float UnderRealFurniture = 1.2f;
 
         void Awake()
         {
             if (sceneObstacles == null)
                 sceneObstacles = FindFirstObjectByType<SceneObstacles>();
+        }
+
+        void OnEnable()
+        {
+            if (sceneObstacles != null)
+                sceneObstacles.MeshChanged += OnRoomScanChanged;
+        }
+
+        void OnDisable()
+        {
+            if (sceneObstacles != null)
+                sceneObstacles.MeshChanged -= OnRoomScanChanged;
+        }
+
+        /// <summary>The user has moved or added something: their arrangement is no longer re-laid automatically.</summary>
+        public void MarkEdited() => m_Pristine = false;
+
+        void OnRoomScanChanged()
+        {
+            if (!m_Pristine || m_LayoutHead == null || m_Root == null || m_Relayouts >= MaxRelayouts)
+                return;
+            foreach (var item in m_Items)
+            {
+                if (item == null || !item.BlocksFloor)
+                    continue;
+                var blocker = WhatBlocks(item, item.transform.position, item.transform.rotation);
+                if (blocker == null)
+                    continue;
+                Debug.Log($"[PaletteRoom] The room scan shows the {item.DisplayName.ToLowerInvariant()} standing in {blocker}; laying the room out again.");
+                // The scan grows every second on device. Re-laying on every update kept tearing the room
+                // down and dropping it in again (flicker), so it is re-laid a couple of times at most, in place.
+                m_Relayouts++;
+                BuildSampleRoom(m_LayoutHead, m_Root.position.y, dropIn: false);
+                return;
+            }
         }
 
         bool BehindWall(Vector3 user, Vector3 point) => sceneObstacles != null && sceneObstacles.WallBetween(user, point);
@@ -62,10 +110,19 @@ namespace PaletteRoom
         /// <summary>Replaces everything with the sample living room, laid out to fit the real room (see RoomFurniture.Layout.cs).</summary>
         public void SpawnSampleRoom(Transform head, float floorY)
         {
+            m_Relayouts = 0;
+            BuildSampleRoom(head, floorY, dropIn: true);
+        }
+
+        void BuildSampleRoom(Transform head, float floorY, bool dropIn)
+        {
             Clear();
             var root = EnsureRoot(head, floorY);
             var added = LayOutSampleRoom(root, head, floorY);
-            DropIn(added);
+            if (dropIn)
+                DropIn(added);
+            m_Pristine = true;
+            m_LayoutHead = head;
             Debug.Log($"[PaletteRoom] Sample room placed at floor y={floorY:F3} (head y={head.position.y:F2}).");
             Changed?.Invoke();
         }
@@ -74,8 +131,9 @@ namespace PaletteRoom
         /// Adds one piece in front of the user, facing them. Floor-standing pieces go to the nearest
         /// spot where they don't intersect anything already in the room.
         /// </summary>
-        public FurnitureItem Add(FurnitureKind kind, string variantId, Transform head, float floorY)
+        public FurnitureItem Add(FurnitureKind kind, string variantId, Transform head, float floorY, bool dropIn = true)
         {
+            m_Pristine = false;
             var root = EnsureRoot(head, floorY);
             var forward = FlatForward(head);
             var rotation = Quaternion.LookRotation(-forward, Vector3.up);
@@ -84,50 +142,100 @@ namespace PaletteRoom
 
             var item = Factory.Create(kind, FurnitureCatalog.Get(kind).Variant(variantId), root);
             var spot = new Vector3(preferred.x, floorY + height, preferred.z);
-            if (item.BlocksFloor && !TryFindFreeSpot(item, spot, rotation, head.position, out spot))
-                Debug.LogWarning($"[PaletteRoom] No free floor space found for {item.DisplayName}; placed in front of the user.");
+            if (item.BlocksFloor && !TryFindFreeSpot(item, spot, rotation, head.position, out spot, maxRadius: 4.5f))
+            {
+                if (dropIn)
+                {
+                    // Never forced into a spot it can't stand on.
+                    Debug.LogWarning($"[PaletteRoom] No free floor space for {item.DisplayName} nearby; not added.");
+                    DestroyObject(item.gameObject);
+                    return null;
+                }
+                // Going straight into the user's hand: the drop is checked when they let go.
+                Debug.Log($"[PaletteRoom] No free floor space for {item.DisplayName} nearby; it goes into the hand to be set down somewhere free.");
+            }
             item.transform.SetPositionAndRotation(spot, rotation);
             m_Items.Add(item);
-            if (kind == FurnitureKind.WallArt && !TryHangOnWall(item, head, floorY))
-                Debug.Log("[PaletteRoom] No scanned wall nearby for the art; it floats in front of the user.");
-            DropIn(new List<FurnitureItem> { item });
+            if ((kind == FurnitureKind.WallArt || kind == FurnitureKind.WallShelf) && !TryHangOnWall(item, head, floorY))
+                Debug.Log($"[PaletteRoom] No scanned wall nearby for the {item.DisplayName.ToLowerInvariant()}; it floats in front of the user.");
+            if (item.Mount == FurnitureMount.Free && kind != FurnitureKind.ThrowPillow && !TryPlaceAccessory(item, head))
+                Debug.Log($"[PaletteRoom] Nothing to set the {item.DisplayName.ToLowerInvariant()} on yet; it's on the floor in front of the user.");
+            if (dropIn)
+                DropIn(new List<FurnitureItem> { item });
             Changed?.Invoke();
             return item;
         }
 
         /// <summary>True if <paramref name="item"/> at this pose would not intersect another floor-standing piece.</summary>
-        public bool IsFree(FurnitureItem item, Vector3 position, Quaternion rotation)
+        public bool IsFree(FurnitureItem item, Vector3 position, Quaternion rotation) => WhatBlocks(item, position, rotation) == null;
+
+        /// <summary>
+        /// What stops <paramref name="item"/> standing here — another piece, a wall, or real furniture —
+        /// or null if nothing does. Used for placement, and to explain refused drops in the log.
+        /// </summary>
+        public string WhatBlocks(FurnitureItem item, Vector3 position, Quaternion rotation)
         {
             if (!item.BlocksFloor)
-                return true;
+                return null;
             var footprints = item.FootprintsAt(position, rotation);
             foreach (var other in m_Items)
             {
                 if (other == null || other == item || !other.BlocksFloor)
                     continue;
                 if (FurnitureItem.Overlap(footprints, other.CurrentFootprints))
-                    return false;
+                    return $"the {other.DisplayName.ToLowerInvariant()}";
             }
             // The real room: nothing goes through a wall, and virtual pieces stand around real furniture.
             if (sceneObstacles != null)
             {
                 foreach (var wall in sceneObstacles.Walls)
                     if (FurnitureItem.Overlap(footprints, new[] { wall }))
-                        return false;
-                foreach (var real in sceneObstacles.Furniture)
-                    if (FurnitureItem.Overlap(footprints, new[] { real }))
-                        return false;
+                        return $"a wall ({wall.half.x * 2f:F1} m, centred at {wall.centre.x:F1}, {wall.centre.y:F1})";
+                return WhatRealBlocks(footprints, TopAbove(item, position));
             }
-            return true;
+            return null;
+        }
+
+        /// <summary>How high the piece reaches above the floor when standing at <paramref name="position"/>.</summary>
+        float TopAbove(FurnitureItem item, Vector3 position)
+        {
+            float floorY = m_Root != null ? m_Root.position.y : position.y;
+            return LocalBox(item).max.y + Mathf.Max(0f, position.y - floorY);
+        }
+
+        /// <summary>
+        /// Real things in the way up to <paramref name="top"/> metres: the 3D room scan when there is one
+        /// (exact shapes), otherwise the rough boxes from plane detection.
+        /// </summary>
+        string WhatRealBlocks(Footprint[] footprints, float top)
+        {
+            if (sceneObstacles == null)
+                return null;
+            if (sceneObstacles.HasMesh)
+            {
+                // Nothing goes under a real table, desk or bed either, even when it would clear the top:
+                // a coffee table tucked under a dining table reads as one stacked on (or in) the other.
+                top = Mathf.Max(top, UnderRealFurniture);
+                foreach (var f in footprints)
+                    if (sceneObstacles.MeshBlocks(f, top, out var where))
+                        return where;
+                return null;
+            }
+            foreach (var real in sceneObstacles.Furniture)
+                if (FurnitureItem.Overlap(footprints, new[] { real }))
+                    return $"real furniture ({real.half.x * 2f:F1}×{real.half.y * 2f:F1} m at {real.centre.x:F1}, {real.centre.y:F1})";
+            return null;
         }
 
         /// <summary>
         /// Searches outward from <paramref name="preferred"/> in rings for the closest free spot that
         /// is neither on top of the user nor out of reach.
         /// </summary>
-        bool TryFindFreeSpot(FurnitureItem item, Vector3 preferred, Quaternion rotation, Vector3 userPosition, out Vector3 spot)
+        public bool TryFindFreeSpot(FurnitureItem item, Vector3 preferred, Quaternion rotation, Vector3 userPosition, out Vector3 spot,
+            float maxRadius = 3f)
         {
-            const float step = 0.15f, maxRadius = 3f, minFromUser = 0.6f, maxFromUser = 4f;
+            const float step = 0.15f, minFromUser = 0.6f;
+            float maxFromUser = Mathf.Max(4f, maxRadius + 1.5f);
             var user = new Vector2(userPosition.x, userPosition.z);
             for (float r = 0f; r <= maxRadius; r += step)
             {
@@ -173,6 +281,46 @@ namespace PaletteRoom
             var p = m_Root.position;
             m_Root.position = new Vector3(p.x, floorY, p.z);
             Debug.Log($"[PaletteRoom] Floor moved to y={floorY:F3}; furniture follows.");
+        }
+
+        /// <summary>True if the piece stands where it is without overlapping anything (for brief scoring).</summary>
+        public bool IsWellPlaced(FurnitureItem item) =>
+            item == null || IsFree(item, item.transform.position, item.transform.rotation);
+
+        /// <summary>
+        /// Lays a saved lookbook design out again: its centre about two metres in front of the user,
+        /// facing them as it faced the viewer when it was saved, with each part's color picks restored.
+        /// </summary>
+        public void Restore(Lookbook.Entry entry, Transform head, float floorY)
+        {
+            Clear();
+            m_Pristine = false;
+            var root = EnsureRoot(head, floorY);
+            var forward = FlatForward(head);
+            var centre = head.position + forward * (distanceFromUser + 0.3f);
+            centre.y = floorY;
+            var frame = Quaternion.LookRotation(-forward, Vector3.up);
+            var added = new List<FurnitureItem>();
+            foreach (var piece in entry.pieces)
+            {
+                if (!Enum.TryParse(piece.kind, out FurnitureKind kind))
+                    continue;
+                var item = Factory.Create(kind, FurnitureCatalog.Get(kind).Variant(piece.variant), root);
+                var position = centre + frame * piece.offset;
+                position.y = floorY + piece.offset.y;
+                item.transform.SetPositionAndRotation(position, frame * Quaternion.Euler(piece.euler));
+                foreach (var pick in piece.picks)
+                    foreach (var zone in item.Zones)
+                        if (zone.ZoneName == pick.zone)
+                            zone.SetOverride((PaletteSlot)pick.slot, 0f);
+                if (piece.picks.Count > 0 && PaletteManager.Instance != null)
+                    PaletteManager.Instance.RefreshItem(item);
+                m_Items.Add(item);
+                added.Add(item);
+            }
+            DropIn(added);
+            Debug.Log($"[PaletteRoom] Restored \"{entry.title}\" from the lookbook: {added.Count} pieces.");
+            Changed?.Invoke();
         }
 
         public void Clear()

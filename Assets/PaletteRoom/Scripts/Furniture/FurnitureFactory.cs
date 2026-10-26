@@ -19,6 +19,21 @@ namespace PaletteRoom
         Plant,
         WallArt,
         ThrowPillow,
+        Desk,
+        DeskChair,
+        DiningTable,
+        DiningChair,
+        Ottoman,
+        Bench,
+        ConsoleTable,
+        Nightstand,
+        Dresser,
+        MediaConsole,
+        TableLamp,
+        FloorMirror,
+        Vase,
+        ThrowBlanket,
+        WallShelf,
     }
 
     /// <summary>
@@ -27,7 +42,7 @@ namespace PaletteRoom
     /// library's linen, bouclé, paint and oak materials. Every root sits on the floor (local y = 0) and
     /// faces local +Z.
     /// </summary>
-    public class FurnitureFactory
+    public partial class FurnitureFactory
     {
         readonly FurnitureLibrary m_Library;
         readonly Material m_Fallback;
@@ -69,8 +84,12 @@ namespace PaletteRoom
                 case FurnitureKind.Bookshelf: Bookshelf(b, variant); break;
                 case FurnitureKind.WallArt: WallArt(b, variant); break;
                 default:
-                    Debug.LogError($"[PaletteRoom] No prefab or builder for {kind}; run Palette Room ▸ Rebuild Furniture Assets.");
-                    Sofa(b, FurnitureCatalog.Get(FurnitureKind.Sofa).Default);
+                    // The wider range of pieces lives in FurnitureFactory.Pieces.cs.
+                    if (!BuildMore(b, kind, variant))
+                    {
+                        Debug.LogError($"[PaletteRoom] No prefab or builder for {kind}; run Palette Room ▸ Rebuild Furniture Assets.");
+                        Sofa(b, FurnitureCatalog.Get(FurnitureKind.Sofa).Default);
+                    }
                     break;
             }
             return b.Finish(MountFor(kind));
@@ -81,7 +100,12 @@ namespace PaletteRoom
             switch (kind)
             {
                 case FurnitureKind.WallArt: return FurnitureMount.Wall;
-                case FurnitureKind.ThrowPillow: return FurnitureMount.Free;
+                case FurnitureKind.ThrowPillow:
+                case FurnitureKind.TableLamp:
+                case FurnitureKind.Vase:
+                case FurnitureKind.ThrowBlanket:
+                    return FurnitureMount.Free; // accessories sit on other pieces
+                case FurnitureKind.WallShelf: return FurnitureMount.Wall;
                 default: return FurnitureMount.Floor;
             }
         }
@@ -98,11 +122,17 @@ namespace PaletteRoom
 
         // ---- code-built pieces -------------------------------------------------------------
 
+        // Sofa measurements that other code relies on (e.g. to set pillows on it), in the sofa's own space.
+        public const float SofaArmWidth = 0.17f;
+        public const float SofaSeatTop = 0.47f;            // top of the seat cushions
+        public const float SofaBackCushionFront = -0.085f; // front of the back cushions where they meet the seat
+        public const float SofaBackLean = 12f;             // back cushions tilt back this many degrees
+
         void Sofa(Builder b, FurnitureVariant v)
         {
             // A deep, boxy sofa with loose cushions and slim tapered oak legs. The chaise variant extends
             // the end seat on the right as seen from the front (the sitter's left) into a long lounging section.
-            const float legs = 0.1f, arm = 0.17f, depth = 0.88f;
+            const float legs = 0.1f, arm = SofaArmWidth, depth = 0.88f;
             float width = v.size.x;
             int seats = Mathf.Max(1, v.seats);
             float inner = width - 2f * arm;
@@ -125,7 +155,7 @@ namespace PaletteRoom
                 float seatDepth = 0.64f + (chaiseSeat ? extra : 0f);
                 cushions.Add(Part.Box(new Vector3(x, legs + 0.295f, 0.08f + (chaiseSeat ? extra / 2f : 0f)), new Vector3(pitch - 0.01f, 0.15f, seatDepth), 0.06f, 0.015f));
                 cushions.Add(Part.Box(new Vector3(x, legs + 0.57f, -0.21f), new Vector3(pitch - 0.02f, 0.40f, 0.17f), 0.07f, 0.02f,
-                    Quaternion.Euler(-12f, 0f, 0f)));
+                    Quaternion.Euler(-SofaBackLean, 0f, 0f)));
             }
 
             var legParts = new List<Part>(Legs(width / 2f - 0.07f, depth / 2f - 0.08f, legs, 0.022f, 0.015f));

@@ -39,6 +39,9 @@ namespace PaletteRoom
         TextMeshProUGUI m_Summary;
 
         public event Action<FurnitureKind, string> AddRequested;
+
+        /// <summary>A tile's picture was held: add the piece and put it in this hand (null when there's no XR hand, e.g. the mouse).</summary>
+        public event Action<FurnitureKind, string, UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor> PickUpRequested;
         public event Action Closed;
 
         public void Build(Camera eventCamera, PaletteManager palettes, RoomFurniture room)
@@ -156,8 +159,10 @@ namespace PaletteRoom
                 icon.transform.SetParent(c, false);
                 icon.sprite = sprite;
                 icon.preserveAspect = true;
-                icon.raycastTarget = false;
                 UIKit.Place(icon.rectTransform, (TileW - Icon) / 2f, 4f, Icon, Icon);
+                // Hold the picture to lift the piece out of the list and carry it into the room.
+                icon.raycastTarget = true;
+                icon.gameObject.AddComponent<TilePickUp>().PickedUp += hand => PickUpRequested?.Invoke(entry.kind, variant.id, hand);
             }
 
             // Role color in the corner: the palette slot this piece will take.

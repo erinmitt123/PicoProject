@@ -312,14 +312,59 @@ namespace PaletteRoom.EditorTools
                 else
                     Object.DestroyImmediate(r.gameObject); // one pillow per catalog item
             }
-            // Centre the kept pillow on the root and stand it upright, facing +Z.
-            keep.transform.localRotation = Quaternion.identity;
+            // The scan's pillow faces +Z but sits rolled like a diamond; square it up, then centre it on the root.
+            keep.transform.rotation = root.transform.rotation * SquareUp(keep.GetComponent<MeshFilter>().sharedMesh, keep.transform.lossyScale);
             var b = keep.bounds;
             keep.transform.position -= new Vector3(b.center.x, b.min.y, b.center.z);
             // The zigzag print is softened so the palette color dominates.
             SetSlot(keep, -1, Lit("Throw Pillow Cover", Tint(ModelTex(id, "diff_1k.jpg"), 0.45f), Tex(ModelTex(id, "nor_gl_1k.exr")), Color.white, 0.15f));
             Zone(root, "Cover", ZoneColorSource.ItemRole, new PaintableZone.Target(keep));
             return Save(root, "Throw Pillow");
+        }
+
+        /// <summary>
+        /// The roll about +Z that squares up a cushion facing +Z: the one that makes its outline smallest,
+        /// so its edges run along X and Y rather than sitting as a diamond.
+        /// </summary>
+        static Quaternion SquareUp(Mesh mesh, Vector3 scale)
+        {
+            var verts = mesh.vertices;
+            for (int i = 0; i < verts.Length; i++)
+                verts[i] = Vector3.Scale(verts[i], scale);
+            int stride = Mathf.Max(1, verts.Length / 2000); // a sample of vertices is plenty for extents
+
+            float Extent(Vector3 axis)
+            {
+                float lo = float.MaxValue, hi = float.MinValue;
+                for (int i = 0; i < verts.Length; i += stride)
+                {
+                    float d = Vector3.Dot(verts[i], axis);
+                    lo = Mathf.Min(lo, d);
+                    hi = Mathf.Max(hi, d);
+                }
+                return hi - lo;
+            }
+
+            // The cushion already faces +Z in its mesh space (it's puffy, so "thinnest direction" isn't
+            // a reliable guide); only its roll within the face is off.
+            var normal = Vector3.forward;
+
+            // Roll within the face so the outline is smallest.
+            var u0 = Vector3.Cross(normal, Mathf.Abs(normal.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 bestU = u0;
+            float bestArea = float.MaxValue;
+            for (float r = 0f; r < 90f; r += 0.5f)
+            {
+                var u = Quaternion.AngleAxis(r, normal) * u0;
+                float area = Extent(u) * Extent(Vector3.Cross(normal, u));
+                if (area < bestArea)
+                {
+                    bestArea = area;
+                    bestU = u;
+                }
+            }
+            var up = Vector3.Cross(normal, bestU);
+            return Quaternion.Inverse(Quaternion.LookRotation(normal, up));
         }
 
         static (GameObject root, GameObject model) Begin(string name, string id)

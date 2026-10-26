@@ -1,7 +1,9 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Transformers;
 
 namespace PaletteRoom
@@ -10,8 +12,9 @@ namespace PaletteRoom
     /// Runs after XRI's general grab transformer and enforces real-world placement: nothing goes below
     /// the floor (the room root's height); floor pieces stay on it and only turn around the vertical
     /// axis; wall pieces stay upright. While a floor piece is over a spot it can't stand on (another
-    /// piece, a wall, or real furniture such as a bed), it glows red, and dropping it there puts it back
-    /// where it was picked up.
+    /// piece, a wall, or real furniture such as a bed), it glows red and the controller knocks twice;
+    /// dropping it there settles it at the nearest spot it can stand on (or back where it was picked
+    /// up), with a firmer buzz.
     /// </summary>
     public class FurnitureGrabTransformer : XRBaseGrabTransformer
     {
@@ -23,6 +26,7 @@ namespace PaletteRoom
         RoomFurniture m_Room;
         Pose m_PickedUp;
         bool m_Invalid;
+        string m_Blocker;
         bool m_Tinted;
         MaterialPropertyBlock m_Block;
         readonly List<Renderer> m_Renderers = new List<Renderer>();
@@ -45,8 +49,9 @@ namespace PaletteRoom
         /// <summary>The floor's height: the room root sits on it.</summary>
         float FloorY => m_RoomRoot != null ? m_RoomRoot.position.y : 0f;
 
-        void Start()
+        protected override void Start()
         {
+            base.Start(); // registration mode is None, so XRI leaves the registering to the lines below
             if (m_Grab == null)
                 return;
             m_Grab.AddSingleGrabTransformer(this);
@@ -128,6 +133,8 @@ namespace PaletteRoom
             if (m_Grab.interactorsSelecting.Count > 1)
                 return; // a second hand joining keeps the original pick-up pose
             EnsureLast();
+            if (m_Room != null)
+                m_Room.MarkEdited();
             m_PickedUp = new Pose(transform.position, transform.rotation);
             m_Invalid = false;
             CollectRiders();
@@ -139,9 +146,11 @@ namespace PaletteRoom
                 return;
             if (m_Invalid)
             {
-                // Dropped on a spot it can't stand on: back to where it was picked up, and the red lifts.
-                transform.SetPositionAndRotation(m_PickedUp.position, m_PickedUp.rotation);
-                Debug.Log($"[PaletteRoom] {m_Item.DisplayName} can't go there; returned to its last spot.");
+                // The releasing controller is no longer selecting, so it's addressed directly.
+                if (args.interactorObject is XRBaseInputInteractor releasing)
+                    releasing.SendHapticImpulse(0.8f, 0.18f);
+                // Dropped on a spot it can't stand on: it settles at the nearest spot it can, else goes back.
+                SettleLegally();
             }
             MoveRiders();
             float floorY = FloorY;
@@ -149,6 +158,40 @@ namespace PaletteRoom
             m_Riders.Clear();
             m_Invalid = false;
             SetTint(false);
+        }
+
+        /// <summary>
+        /// Puts a piece dropped on a blocked spot somewhere it can stand: the nearest free spot within a
+        /// short reach of where it was let go (so it lands about where the user meant), otherwise back
+        /// where it was picked up if that spot is free, otherwise the nearest free spot to that.
+        /// </summary>
+        void SettleLegally()
+        {
+            const float nearDrop = 1f;
+            var released = new Vector3(transform.position.x, FloorY, transform.position.z);
+            var rotation = Quaternion.Euler(0f, transform.rotation.eulerAngles.y, 0f);
+            var user = Camera.main != null ? Camera.main.transform.position : m_PickedUp.position;
+            if (m_Room.TryFindFreeSpot(m_Item, released, rotation, user, out var spot, nearDrop))
+            {
+                transform.SetPositionAndRotation(spot, rotation);
+                Debug.Log($"[PaletteRoom] {m_Item.DisplayName} can't go there ({m_Blocker}); moved to the nearest free spot, {Vector3.Distance(spot, released):F2} m away.");
+                return;
+            }
+            if (m_Room.IsFree(m_Item, m_PickedUp.position, m_PickedUp.rotation))
+            {
+                transform.SetPositionAndRotation(m_PickedUp.position, m_PickedUp.rotation);
+                Debug.Log($"[PaletteRoom] {m_Item.DisplayName} can't go there ({m_Blocker}); returned to its last spot.");
+                return;
+            }
+            // It was picked up somewhere it couldn't stand (e.g. lifted from the shopping list): find room.
+            if (m_Room.TryFindFreeSpot(m_Item, m_PickedUp.position, m_PickedUp.rotation, user, out spot, 4.5f))
+            {
+                transform.SetPositionAndRotation(spot, m_PickedUp.rotation);
+                Debug.Log($"[PaletteRoom] {m_Item.DisplayName} can't go there ({m_Blocker}); moved to the nearest free spot.");
+                return;
+            }
+            transform.SetPositionAndRotation(m_PickedUp.position, m_PickedUp.rotation);
+            Debug.LogWarning($"[PaletteRoom] No free floor space anywhere near for {m_Item.DisplayName}; returned to its last spot.");
         }
 
         public override void Process(XRGrabInteractable grabInteractable, XRInteractionUpdateOrder.UpdatePhase updatePhase,
@@ -174,8 +217,31 @@ namespace PaletteRoom
 
             if (m_Room == null || !m_Item.BlocksFloor)
                 return;
-            m_Invalid = !m_Room.IsFree(m_Item, targetPose.position, targetPose.rotation);
+            bool wasInvalid = m_Invalid;
+            m_Blocker = m_Room.WhatBlocks(m_Item, targetPose.position, targetPose.rotation);
+            m_Invalid = m_Blocker != null;
             SetTint(m_Invalid);
+            if (m_Invalid && !wasInvalid)
+                StartCoroutine(BlockedBuzz()); // feel it the moment the piece moves onto a spot it can't go
+        }
+
+        // ---- haptics ----------------------------------------------------------------------
+
+        /// <summary>A "no" pattern: two short knocks on the holding controller.</summary>
+        IEnumerator BlockedBuzz()
+        {
+            Buzz(0.55f, 0.06f);
+            yield return new WaitForSecondsRealtime(0.11f);
+            Buzz(0.55f, 0.06f);
+        }
+
+        void Buzz(float amplitude, float seconds)
+        {
+            if (m_Grab == null)
+                return;
+            foreach (var interactor in m_Grab.interactorsSelecting)
+                if (interactor is XRBaseInputInteractor input)
+                    input.SendHapticImpulse(amplitude, seconds);
         }
 
         /// <summary>Shows the piece red (without touching its palette materials) while it's over a bad spot.</summary>

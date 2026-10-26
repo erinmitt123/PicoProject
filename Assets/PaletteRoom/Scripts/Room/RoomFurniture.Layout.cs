@@ -94,17 +94,24 @@ namespace PaletteRoom
             foreach (var f in frames)
                 yield return f.frame;
 
-            // No usable wall (e.g. Editor testing): a virtual wall behind where the sofa would stand.
-            var virtualOrigin = head.position + forward * (distanceFromUser + 1.2f);
-            yield return new Frame
+            // No usable wall (e.g. Editor testing): a virtual wall behind where the sofa would stand,
+            // drawn in closer when a real wall is in the way so the room stays on the user's side of it.
+            foreach (float reach in new[] { distanceFromUser + 1.2f, distanceFromUser + 0.6f, distanceFromUser })
             {
-                origin = new Vector3(virtualOrigin.x, floorY, virtualOrigin.z),
-                along = Vector3.Cross(forward, Vector3.up) * -1f,
-                inward = -forward,
-                halfLength = 3f,
-                wallTop = 2.4f,
-                real = false,
-            };
+                var virtualOrigin = head.position + forward * reach;
+                virtualOrigin.y = floorY;
+                if (BehindWall(new Vector3(user.x, floorY, user.y), virtualOrigin))
+                    continue;
+                yield return new Frame
+                {
+                    origin = virtualOrigin,
+                    along = Vector3.Cross(forward, Vector3.up) * -1f,
+                    inward = -forward,
+                    halfLength = 3f,
+                    wallTop = 2.4f,
+                    real = false,
+                };
+            }
         }
 
         /// <summary>Builds the sample room against the best wall it fits; returns the pieces placed.</summary>
@@ -294,6 +301,8 @@ namespace PaletteRoom
         {
             if (f.real && Mathf.Abs(Vector3.Dot(position - f.origin, f.along)) > f.halfLength + 0.5f)
                 return false; // well past the end of the wall: probably another room
+            if (BehindWall(new Vector3(m_UserSpot.x, position.y, m_UserSpot.y), position))
+                return false; // through a real wall: the passthrough occluder would hide it
             if (item.Kind != FurnitureKind.Rug && TooCloseToUser(item.FootprintsAt(position, rotation)))
                 return false;
             if (!item.BlocksFloor)
@@ -330,10 +339,8 @@ namespace PaletteRoom
             foreach (var wall in sceneObstacles.Walls)
                 if (FurnitureItem.Overlap(footprints, new[] { wall }))
                     return false;
-            foreach (var real in sceneObstacles.Furniture)
-                if (FurnitureItem.Overlap(footprints, new[] { real }))
-                    return false;
-            return true;
+            // A rug lies flat, but it isn't laid under a real bed or among a real table's legs.
+            return WhatRealBlocks(footprints, 0.5f) == null;
         }
 
         static Footprint[] Grow(Footprint[] footprints, float by)
@@ -467,14 +474,7 @@ namespace PaletteRoom
                 Discard(plant);
 
             // 7. Pillows on the sofa; listed together so they alternate accent and highlight.
-            foreach (float x in new[] { -0.62f, 0.62f })
-            {
-                var pillow = Make(root, FurnitureKind.ThrowPillow, "square");
-                pillow.transform.SetPositionAndRotation(
-                    sofa.transform.TransformPoint(new Vector3(x, 0.47f, -0.04f)),
-                    sofa.transform.rotation * Quaternion.Euler(-15f, 0f, 0f));
-                placed.Add(pillow);
-            }
+            PlacePillowsOnSofa(root, sofa, placed);
 
             // 8. Art on the wall: a large print above the sofa, a smaller one above the bookshelf.
             HangArt(root, f, "a1", sofaX, sofaBox.max.y, floorY, placed);
@@ -484,6 +484,30 @@ namespace PaletteRoom
                 HangArt(root, shelfFrame, "a2", Vector3.Dot(shelf.transform.position - shelfFrame.origin, shelfFrame.along), shelfBox.max.y, floorY, placed);
             }
             return placed;
+        }
+
+        /// <summary>
+        /// One pillow in each corner of the sofa: standing on the seat cushion, tucked against the arm,
+        /// and leaning back flush with the back cushions at their angle.
+        /// </summary>
+        void PlacePillowsOnSofa(Transform root, FurnitureItem sofa, List<FurnitureItem> placed)
+        {
+            float width = LocalBox(sofa).size.x;
+            float innerHalf = width / 2f - FurnitureFactory.SofaArmWidth;
+            var lean = Quaternion.Euler(-FurnitureFactory.SofaBackLean, 0f, 0f);
+            foreach (float side in new[] { -1f, 1f })
+            {
+                var pillow = Make(root, FurnitureKind.ThrowPillow, "square");
+                var box = LocalBox(pillow);
+                // Into the corner, a hand's width from the arm so it reads as placed rather than jammed.
+                float x = side * (innerHalf - box.extents.x - 0.04f);
+                // Its back face rests on the back cushions; the lean pivots about its bottom edge.
+                float z = FurnitureFactory.SofaBackCushionFront - box.min.z;
+                var local = new Vector3(x, FurnitureFactory.SofaSeatTop, z);
+                var rotation = sofa.transform.rotation * Quaternion.Euler(0f, -side * 8f, 0f) * lean; // turned in a touch
+                pillow.transform.SetPositionAndRotation(sofa.transform.position + sofa.transform.rotation * local, rotation);
+                placed.Add(pillow);
+            }
         }
 
         bool PlaceCoreGroup(Transform root, Frame f, float userX, float floorY, out FurnitureItem sofa, out FurnitureItem table, out FurnitureItem rug)
@@ -591,15 +615,24 @@ namespace PaletteRoom
             bottom = Mathf.Max(bottom, ArtCentreHeight - box.size.y / 2f - 0.15f);
             if (f.real && bottom + box.size.y > f.wallTop - 0.1f)
                 bottom = Mathf.Max(furnitureTop + 0.1f, f.wallTop - 0.1f - box.size.y);
-            var position = f.Point(x, 0.005f - box.min.z, floorY) + Vector3.up * bottom;
             var rotation = f.Facing();
-            if (OverOpening(position, box.size.x))
+            // Centred over the furniture when that stretch of wall is clear; otherwise the nearest clear
+            // spot along the wall (a window, door or real picture may already be there).
+            for (float d = 0f; d <= 1.2f; d += 0.1f)
             {
-                Discard(art);
-                return;
+                foreach (float sign in new[] { 1f, -1f })
+                {
+                    var position = f.Point(x + sign * d, 0.005f - box.min.z, floorY) + Vector3.up * bottom;
+                    if (f.real && Mathf.Abs(x + sign * d) > f.halfLength - box.extents.x)
+                        continue;
+                    if (OverOpening(position, box.size.x) || ArtOverlapsArt(art, position, box.size.x))
+                        continue;
+                    art.transform.SetPositionAndRotation(position, rotation);
+                    placed.Add(art);
+                    return;
+                }
             }
-            art.transform.SetPositionAndRotation(position, rotation);
-            placed.Add(art);
+            Discard(art);
         }
 
         /// <summary>
@@ -632,6 +665,70 @@ namespace PaletteRoom
             return false;
         }
 
+        static readonly FurnitureKind[] Tabletops =
+        {
+            FurnitureKind.SideTable, FurnitureKind.Nightstand, FurnitureKind.ConsoleTable, FurnitureKind.Dresser,
+            FurnitureKind.Desk, FurnitureKind.CoffeeTable, FurnitureKind.MediaConsole, FurnitureKind.DiningTable,
+        };
+
+        static readonly FurnitureKind[] Seats =
+        {
+            FurnitureKind.Sofa, FurnitureKind.Armchair, FurnitureKind.Bench, FurnitureKind.Ottoman,
+        };
+
+        /// <summary>
+        /// Sets an accessory where it belongs: a lamp or vase on the nearest tabletop, a throw over the
+        /// nearest seat. It takes a clear spot on the host's top, away from what's already there.
+        /// </summary>
+        bool TryPlaceAccessory(FurnitureItem accessory, Transform head)
+        {
+            var hosts = accessory.Kind == FurnitureKind.ThrowBlanket ? Seats : Tabletops;
+            var candidates = new List<FurnitureItem>();
+            foreach (var item in m_Items)
+                if (item != null && item != accessory && System.Array.IndexOf(hosts, item.Kind) >= 0)
+                    candidates.Add(item);
+            candidates.Sort((a, b) => Vector3.Distance(head.position, a.transform.position).CompareTo(Vector3.Distance(head.position, b.transform.position)));
+
+            foreach (var host in candidates)
+            {
+                var box = LocalBox(host);
+                float topY = SurfaceHeight(host, box);
+                // Spots across the top: the outer thirds first (styled pieces sit off-centre), then the middle.
+                foreach (float across in new[] { 0.28f, -0.28f, 0f })
+                {
+                    var local = new Vector3(box.center.x + across * box.size.x, topY, box.center.z);
+                    var position = host.transform.position + host.transform.rotation * local;
+                    if (Crowded(position, accessory))
+                        continue;
+                    accessory.transform.SetPositionAndRotation(position, host.transform.rotation);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Where things rest on a host: the seat for seating (not the top of its back), the top for tables.</summary>
+        static float SurfaceHeight(FurnitureItem host, Bounds box)
+        {
+            switch (host.Kind)
+            {
+                case FurnitureKind.Sofa: return FurnitureFactory.SofaSeatTop;
+                case FurnitureKind.Armchair: return 0.42f; // the scanned lounge chair's cushion
+                default: return box.max.y;
+            }
+        }
+
+        /// <summary>Another accessory already stands here (compared across the floor, so pieces still dropping in count).</summary>
+        bool Crowded(Vector3 position, FurnitureItem except)
+        {
+            var flat = new Vector2(position.x, position.z);
+            foreach (var item in m_Items)
+                if (item != null && item != except && item.Mount == FurnitureMount.Free &&
+                    Vector2.Distance(new Vector2(item.transform.position.x, item.transform.position.z), flat) < 0.22f)
+                    return true;
+            return false;
+        }
+
         bool ArtOverlapsArt(FurnitureItem art, Vector3 position, float width)
         {
             foreach (var other in m_Items)
@@ -652,7 +749,7 @@ namespace PaletteRoom
             foreach (var o in sceneObstacles.Openings)
             {
                 var c = new Vector2(o.centre.x, o.centre.z);
-                float reach = Mathf.Max(o.size.x, o.size.y) / 2f + width / 2f;
+                float reach = Mathf.Max(o.size.x, o.size.y) / 2f + width / 2f + 0.1f; // leave a gap between frames
                 if (Vector2.Distance(p, c) < reach && Mathf.Abs(position.y - o.centre.y) < Mathf.Max(o.size.x, o.size.y))
                     return true;
             }

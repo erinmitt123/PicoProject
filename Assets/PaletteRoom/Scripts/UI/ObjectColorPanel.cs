@@ -145,6 +145,7 @@ namespace PaletteRoom
                 UIKit.Stretch(label.rectTransform);
             }
             button.onClick.AddListener(() => onClick());
+            face.gameObject.AddComponent<ForgivingClick>();
             swatch = face;
             return ring;
         }

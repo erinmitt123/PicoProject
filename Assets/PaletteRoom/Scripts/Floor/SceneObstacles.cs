@@ -39,7 +39,7 @@ namespace PaletteRoom
     /// Surfaces are read from each plane's outline (or its 2D extent when there is no outline), which
     /// also tells which way the plane faces.
     /// </summary>
-    public class SceneObstacles : MonoBehaviour
+    public partial class SceneObstacles : MonoBehaviour
     {
         [SerializeField] XROrigin xrOrigin;
         [SerializeField] FloorDetector floor;
@@ -131,8 +131,23 @@ namespace PaletteRoom
         // Vertical shift applied to every stored surface so the scan lines up with the tracking floor.
         float m_AppliedOffset;
 
+        [Tooltip("Parent of the PICO spatial mesh (the real-world occluder); moved by the same scan offset as the planes.")]
+        [SerializeField] Transform scanAlignedRoot;
+
+        static readonly int FloorYId = Shader.PropertyToID("_PaletteRoomFloorY");
+
+        void Start()
+        {
+            if (floor != null)
+                Shader.SetGlobalFloat(FloorYId, floor.FloorY);
+        }
+
         void OnFloorChanged(FloorDetector _)
         {
+            // The occluder flattens the scanned floor just below this, so things lying on it aren't cut.
+            Shader.SetGlobalFloat(FloorYId, floor.FloorY);
+            if (scanAlignedRoot != null)
+                scanAlignedRoot.localPosition = new Vector3(0f, floor.ScanOffsetY, 0f);
             float delta = floor.ScanOffsetY - m_AppliedOffset;
             if (Mathf.Abs(delta) > 1e-4f)
             {
@@ -166,7 +181,8 @@ namespace PaletteRoom
                     continue;
                 if (!TryClassify(plane, surface, out surface.kind))
                     continue;
-                surface.opening = surface.kind == SurfaceKind.Wall && plane.label != PxrSemanticLabel.Wall && plane.label != PxrSemanticLabel.Unknown;
+                surface.opening = surface.kind == SurfaceKind.Wall &&
+                                  ((plane.label != PxrSemanticLabel.Wall && plane.label != PxrSemanticLabel.Unknown) || !WallSized(surface));
                 surface.label = plane.label.ToString();
                 m_Surfaces[plane.uuid] = surface;
                 if (plane.state == MeshChangeState.Added)
@@ -242,6 +258,7 @@ namespace PaletteRoom
                 case PxrSemanticLabel.Door:
                 case PxrSemanticLabel.Window:
                 case PxrSemanticLabel.Opening:
+                case PxrSemanticLabel.WallArt: // a real picture: part of the wall, and nothing hangs over it
                     kind = SurfaceKind.Wall;
                     return true;
             }
@@ -253,16 +270,23 @@ namespace PaletteRoom
             }
             if (upright)
             {
-                // Unlabelled upright surfaces only count as walls when they're wall-sized.
+                // Wall-sized upright surfaces are walls. Smaller ones (often a picture, mirror or panel on
+                // a wall) are kept as wall features: nothing walks through them and nothing hangs over them.
                 kind = SurfaceKind.Wall;
-                float tall = Mathf.Abs((s.rotation * Vector3.up).y) > 0.7f ? s.size.y : s.size.x;
-                float wide = Mathf.Max(s.size.x, s.size.y);
-                return tall >= 1.5f && wide >= 1f;
+                return true;
             }
             // The outline gives the normal's axis but not which way it points, so trust the runtime for that.
             if (plane.orientationMode == PxrPlaneOrientation.HorizontalDownward)
                 kind = SurfaceKind.Ceiling;
             return true;
+        }
+
+        /// <summary>At least 1.5 m tall and 1 m wide: a wall rather than something on one.</summary>
+        static bool WallSized(RoomSurface s)
+        {
+            float tall = Mathf.Abs((s.rotation * Vector3.up).y) > 0.7f ? s.size.y : s.size.x;
+            float wide = Mathf.Max(s.size.x, s.size.y);
+            return tall >= 1.5f && wide >= 1f;
         }
 
         static bool IsObject(PxrSemanticLabel label)
@@ -316,15 +340,18 @@ namespace PaletteRoom
                 var s = m_Surfaces[key];
                 if (s.kind == SurfaceKind.Wall)
                 {
-                    m_Walls[key] = WallFootprint(s);
+                    // Pictures and other small wall features only keep art from hanging over them; they are
+                    // not barriers (doors and windows, which are labelled, still are).
+                    bool feature = !WallSized(s) && (s.label == "Unknown" || s.label == "WallArt" || string.IsNullOrEmpty(s.label));
+                    if (!feature)
+                        m_Walls[key] = WallFootprint(s);
                     continue;
                 }
                 if (s.kind != SurfaceKind.Furniture)
                     continue;
                 if (Mathf.Abs((s.rotation * Vector3.forward).y) < 0.5f)
                 {
-                    // An upright face of a real object: its width along the floor, and a depth guessed
-                    // from it (a plant is about as deep as it is wide; a cabinet front less so).
+                    // An upright face of a real object (plant, cabinet front…): a thin strip along it.
                     m_Furniture[key] = ObjectFootprint(s);
                     m_UprightObjects.Add(key);
                     continue;
@@ -424,7 +451,10 @@ namespace PaletteRoom
             var along = new Vector2(along3.x, along3.z);
             along = along.sqrMagnitude > 1e-6f ? along.normalized : Vector2.right;
             var across = new Vector2(-along.y, along.x);
-            float depth = Mathf.Clamp(width * 0.8f, 0.3f, 0.8f);
+            // The scan sees one face of the object, not its depth. A thin strip along that face stops pieces
+            // passing through it without fencing off open floor beside it (horizontal tops of tables and
+            // beds are their own obstacles).
+            const float depth = 0.12f;
             return new Footprint(Flat(s.centre), along, across, new Vector2(width * 0.5f, depth * 0.5f));
         }
 

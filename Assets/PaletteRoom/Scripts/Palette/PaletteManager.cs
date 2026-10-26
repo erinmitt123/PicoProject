@@ -72,14 +72,30 @@ namespace PaletteRoom
             SetPalette(saved);
         }
 
-        /// <summary>Switches palettes; every paintable zone blends over <see cref="BlendDuration"/>.</summary>
+        /// <summary>
+        /// Switches palettes. With a <see cref="PaletteWave"/> in the scene the colors ripple out from the
+        /// user's hand piece by piece; otherwise every paintable zone blends over <see cref="BlendDuration"/>.
+        /// </summary>
         public void SetPalette(ColorPalette palette)
         {
             if (palette == null)
                 return;
             m_Current = palette;
-            for (int i = 0; i < m_Items.Count; i++)
-                ApplyToItem(m_Items[i], i, palette, animate: true);
+            if (PaletteWave.Instance != null && PaletteWave.Instance.isActiveAndEnabled && m_Items.Count > 0)
+            {
+                PaletteWave.Instance.Play(m_Items, palette, item =>
+                {
+                    // Applied with the palette current at that moment, so a newer pick always wins.
+                    int index = m_Items.IndexOf(item);
+                    if (index >= 0)
+                        ApplyToItem(item, index, Current, animate: true);
+                });
+            }
+            else
+            {
+                for (int i = 0; i < m_Items.Count; i++)
+                    ApplyToItem(m_Items[i], i, palette, animate: true);
+            }
             PaletteChanged?.Invoke(palette);
         }
 
