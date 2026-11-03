@@ -28,6 +28,9 @@ namespace PaletteRoom
         float m_RecallYaw;
         float m_RecallBelowEyes = 0.2f;
 
+        /// <summary>Raised when the user takes hold of the panel's grab bar.</summary>
+        public event System.Action Grabbed;
+
         /// <summary>True once the panel has a world position (from first placement or the user).</summary>
         public bool IsPlaced => m_Placed;
 
@@ -94,6 +97,9 @@ namespace PaletteRoom
         void OnDestroy() => m_Recall?.Dispose();
 
         const float BarW = 0.14f, BarH = 0.014f, BarGap = 0.018f;
+        // The ray is a cone, and its nearest hit wins. Sitting behind the panel's plane keeps the hit box
+        // from beating the buttons just above it, so a pinch on them presses instead of moving the panel.
+        const float BarHitBehind = 0.02f;
 
         Transform m_BarCanvas, m_BarHit;
         Canvas m_PanelCanvas;
@@ -106,7 +112,7 @@ namespace PaletteRoom
             var size = ((RectTransform)m_PanelCanvas.transform).sizeDelta * UIKit.MillimetresToMetres;
             var pos = new Vector3(0f, -(size.y / 2f + BarGap + BarH / 2f), 0f);
             m_BarCanvas.localPosition = pos;
-            m_BarHit.localPosition = pos;
+            m_BarHit.localPosition = pos + Vector3.forward * BarHitBehind;
         }
 
         void BuildBar(Camera eventCamera, Vector2 panelSize)
@@ -128,7 +134,7 @@ namespace PaletteRoom
             // Generous hit box so the bar is easy to catch with a hand or a ray.
             var hit = new GameObject("Grab Bar Collider");
             hit.transform.SetParent(transform, false);
-            hit.transform.localPosition = barCanvas.transform.localPosition;
+            hit.transform.localPosition = barCanvas.transform.localPosition + Vector3.forward * BarHitBehind;
             var box = hit.AddComponent<BoxCollider>();
             box.size = new Vector3(barW + 0.04f, barH + 0.03f, 0.03f);
             m_BarHit = hit.transform;
@@ -150,7 +156,7 @@ namespace PaletteRoom
             grab.farAttachMode = InteractableFarAttachMode.Far; // a ray grab keeps the panel at a distance
             grab.hoverEntered.AddListener(_ => RefreshBar(grab));
             grab.hoverExited.AddListener(_ => RefreshBar(grab));
-            grab.selectEntered.AddListener(_ => { m_Placed = true; RefreshBar(grab); });
+            grab.selectEntered.AddListener(_ => { m_Placed = true; RefreshBar(grab); Grabbed?.Invoke(); });
             grab.selectExited.AddListener(_ => RefreshBar(grab));
 
             var general = gameObject.AddComponent<XRGeneralGrabTransformer>();

@@ -135,6 +135,7 @@ namespace PaletteRoom
         void Finish(float floorY)
         {
             Cancel();
+            Debug.Log($"[PaletteRoom] Floor tapped at y={floorY:F3}.");
             floorDetector.SetFloorFromTap(floorY);
             Completed?.Invoke();
         }

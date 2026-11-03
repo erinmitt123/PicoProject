@@ -29,6 +29,7 @@ namespace PaletteRoom
         readonly List<FurnitureItem> m_Items = new List<FurnitureItem>();
         FurnitureFactory m_Factory;
         Transform m_Root;
+        Transform m_Head; // the user, who is inside the room: pieces can't go across a wall from them
 
         public IReadOnlyList<FurnitureItem> Items => m_Items;
         public FurnitureLibrary Library => library;
@@ -175,9 +176,15 @@ namespace PaletteRoom
         /// </summary>
         public string WhatBlocks(FurnitureItem item, Vector3 position, Quaternion rotation)
         {
-            if (!item.BlocksFloor)
+            if (item.Mount != FurnitureMount.Floor)
                 return null;
             var footprints = item.FootprintsAt(position, rotation);
+            // Wall strips only stop a piece that overlaps them: one taken right past a wall or window
+            // overlaps nothing, so any part of it across a wall from the user puts it outside the room.
+            if (OutsideRoom(footprints))
+                return "outside the room (past a wall, door or window)";
+            if (!item.BlocksFloor)
+                return null;
             foreach (var other in m_Items)
             {
                 if (other == null || other == item || !other.BlocksFloor)
@@ -194,6 +201,23 @@ namespace PaletteRoom
                 return WhatRealBlocks(footprints, TopAbove(item, position));
             }
             return null;
+        }
+
+        bool OutsideRoom(Footprint[] footprints)
+        {
+            if (sceneObstacles == null || m_Head == null)
+                return false;
+            var user = m_Head.position;
+            foreach (var f in footprints)
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    var corner = f.centre + f.axisX * f.half.x * ((i & 1) == 0 ? -1f : 1f) + f.axisZ * f.half.y * ((i & 2) == 0 ? -1f : 1f);
+                    if (sceneObstacles.WallBetween(user, new Vector3(corner.x, user.y, corner.y)))
+                        return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>How high the piece reaches above the floor when standing at <paramref name="position"/>.</summary>
@@ -290,16 +314,23 @@ namespace PaletteRoom
         /// <summary>
         /// Lays a saved lookbook design out again: its centre about two metres in front of the user,
         /// facing them as it faced the viewer when it was saved, with each part's color picks restored.
+        /// A design saved in another room may not fit this one, so every floor piece must stand clear of
+        /// walls, real furniture and the other pieces (nudged at most <see cref="RestoreNudge"/>). If any
+        /// piece can't, nothing is laid out, the room stays as it was, and <paramref name="problem"/> says why.
         /// </summary>
-        public void Restore(Lookbook.Entry entry, Transform head, float floorY)
+        public bool Restore(Lookbook.Entry entry, Transform head, float floorY, out string problem)
         {
-            Clear();
-            m_Pristine = false;
+            problem = null;
             var root = EnsureRoot(head, floorY);
             var forward = FlatForward(head);
             var centre = head.position + forward * (distanceFromUser + 0.3f);
             centre.y = floorY;
             var frame = Quaternion.LookRotation(-forward, Vector3.up);
+
+            // The current pieces stay put until the design is known to fit, but don't count against it.
+            Prune();
+            var previous = new List<FurnitureItem>(m_Items);
+            m_Items.Clear();
             var added = new List<FurnitureItem>();
             foreach (var piece in entry.pieces)
             {
@@ -308,20 +339,50 @@ namespace PaletteRoom
                 var item = Factory.Create(kind, FurnitureCatalog.Get(kind).Variant(piece.variant), root);
                 var position = centre + frame * piece.offset;
                 position.y = floorY + piece.offset.y;
-                item.transform.SetPositionAndRotation(position, frame * Quaternion.Euler(piece.euler));
+                var rotation = frame * Quaternion.Euler(piece.euler);
+                item.transform.SetPositionAndRotation(position, rotation);
+                m_Items.Add(item);
+                added.Add(item);
+                var blocker = WhatBlocks(item, position, rotation);
+                if (blocker != null)
+                {
+                    if (!TryFindFreeSpot(item, position, rotation, head.position, out var spot, RestoreNudge))
+                    {
+                        problem = $"The {item.DisplayName.ToLowerInvariant()} would be in {blocker}.";
+                        break;
+                    }
+                    item.transform.position = spot;
+                }
                 foreach (var pick in piece.picks)
                     foreach (var zone in item.Zones)
                         if (zone.ZoneName == pick.zone)
                             zone.SetOverride((PaletteSlot)pick.slot, 0f);
                 if (piece.picks.Count > 0 && PaletteManager.Instance != null)
                     PaletteManager.Instance.RefreshItem(item);
-                m_Items.Add(item);
-                added.Add(item);
             }
+
+            if (problem != null)
+            {
+                foreach (var item in added)
+                    DestroyObject(item.gameObject);
+                m_Items.Clear();
+                m_Items.AddRange(previous);
+                Debug.Log($"[PaletteRoom] \"{entry.title}\" doesn't fit this room: {problem} Nothing was changed.");
+                return false;
+            }
+
+            StopAllCoroutines();
+            foreach (var item in previous)
+                DestroyObject(item.gameObject);
+            m_Pristine = false;
             DropIn(added);
             Debug.Log($"[PaletteRoom] Restored \"{entry.title}\" from the lookbook: {added.Count} pieces.");
             Changed?.Invoke();
+            return true;
         }
+
+        /// <summary>How far a restored piece may shift to clear something; any further and the design doesn't fit.</summary>
+        const float RestoreNudge = 0.4f;
 
         public void Clear()
         {
@@ -337,6 +398,7 @@ namespace PaletteRoom
 
         Transform EnsureRoot(Transform head, float floorY)
         {
+            m_Head = head;
             if (m_Root == null)
             {
                 m_Root = new GameObject("Room").transform;

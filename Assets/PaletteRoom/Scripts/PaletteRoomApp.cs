@@ -5,14 +5,18 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Serialization;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Casters;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 namespace PaletteRoom
 {
     /// <summary>
-    /// Entry point: welcome panel (with a room-scan prompt when the room isn't set up) → "Start in my room"
-    /// or "Start with a sample room" → palette dock, with the color wheel and shopping list opened from the
-    /// dock. Owns floor detection and keeps furniture resting on the floor.
+    /// Entry point: welcome panel (with a room-scan prompt when the room isn't set up) → the user's room,
+    /// the sample room or last time's room → palette dock, with the color wheel and shopping list opened from
+    /// the dock. Owns floor detection and keeps furniture resting on the floor. Also runs the tutorial (on the
+    /// first sample room, and from the dock), the confirmed Exit, and saving the room in progress so it can be
+    /// continued next time.
     /// </summary>
     [RequireComponent(typeof(PaletteManager), typeof(FloorDetector), typeof(FloorTapCalibrator))]
     public class PaletteRoomApp : MonoBehaviour
@@ -61,12 +65,15 @@ namespace PaletteRoom
             m_Calibrator.Configure(m_Floor, m_Camera.transform, floorReticle);
 
             EnsureEventSystem();
+            TightenHandReach();
 
             m_Scene = GetComponent<SceneObstacles>();
             m_Scanner = gameObject.AddComponent<RoomScanner>();
             welcomePanel.Build(m_Camera, m_Floor, m_Calibrator, m_Scene, m_Scanner);
             welcomePanel.StartSampleRoomRequested += StartSampleRoom;
             welcomePanel.StartMyRoomRequested += StartMyRoom;
+            welcomePanel.ContinueRequested += ContinueLastRoom;
+            welcomePanel.ExitRequested += RequestExit;
             welcomePanel.gameObject.SetActive(false);
 
             paletteDock.Build(m_Camera, m_Palettes, m_Calibrator);
@@ -75,6 +82,9 @@ namespace PaletteRoom
             m_DockPanel.SetRecallPose(0.7f, -30f, 0.2f);
             paletteDock.ColorWheelRequested += OpenColorWheel;
             paletteDock.ShoppingListRequested += OpenShoppingList;
+            paletteDock.TutorialRequested += StartTutorial;
+            paletteDock.ExitRequested += RequestExit;
+            paletteDock.PalettePicked += _ => NotifyTutorial(TutorialGoal.PickPalette);
             paletteDock.gameObject.SetActive(false);
 
             colorWheel.Build(m_Camera, m_Palettes);
@@ -86,6 +96,8 @@ namespace PaletteRoom
             AddMovable(shoppingList.gameObject, recallable: false);
             shoppingList.AddRequested += (kind, variant) => room.Add(kind, variant, m_Camera.transform, m_Floor.FloorY);
             shoppingList.PickUpRequested += PickUpFromList;
+            shoppingList.AddRequested += (_, __) => NotifyTutorial(TutorialGoal.AddPiece);
+            shoppingList.PickUpRequested += (_, __, ___) => NotifyTutorial(TutorialGoal.AddPiece);
             shoppingList.Closed += ShowDock;
             shoppingList.gameObject.SetActive(false);
 
@@ -114,8 +126,141 @@ namespace PaletteRoom
             wave.Configure(m_Camera.transform, room.BaseMaterial);
 
             BuildBriefsAndLookbook();
+            BuildTutorialAndExit();
             m_Floor.FloorChanged += OnFloorChanged;
+
+            // The room in progress is saved whenever it changes, so it can be continued next time.
+            room.Changed += QueueRoomSave;
+            m_Palettes.PaletteChanged += _ => QueueRoomSave();
+            m_Palettes.CustomPaletteChanged += _ => NotifyTutorial(TutorialGoal.SavePalette);
+            FurnitureClickDetector.Moved += OnFurnitureMoved;
         }
+
+        // ---- tutorial, exit, saving the room -------------------------------------------------------
+
+        const float RoomSaveDelay = 2f;
+
+        TutorialPanel m_Tutorial;
+        MovablePanel m_TutorialPanel;
+        ConfirmDialog m_Confirm;
+        Coroutine m_RoomSave;
+
+        void BuildTutorialAndExit()
+        {
+            m_Tutorial = NewPanel<TutorialPanel>("Tutorial Panel");
+            m_Tutorial.Build(m_Camera);
+            m_TutorialPanel = AddMovable(m_Tutorial.gameObject, recallable: false);
+            m_TutorialPanel.SetRecallPose(0.9f, 30f, 0.12f); // front-right, opposite the dock
+
+            m_Confirm = NewPanel<ConfirmDialog>("Confirm Dialog");
+            m_Confirm.Build(m_Camera);
+        }
+
+        void NotifyTutorial(TutorialGoal goal)
+        {
+            if (m_Tutorial != null)
+                m_Tutorial.Notify(goal);
+        }
+
+        /// <summary>Runs the tour in the room as it is; an empty room gets the sample room to practise on.</summary>
+        void StartTutorial()
+        {
+            m_Confirm.Cancel();
+            if (RoomIsEmpty())
+                room.SpawnSampleRoom(m_Camera.transform, m_Floor.FloorY);
+            welcomePanel.Hide();
+            paletteDock.gameObject.SetActive(true);
+            m_DockPanel.PlaceIfNeeded();
+            m_Tutorial.Begin();
+            m_TutorialPanel.PlaceInFront();
+        }
+
+        bool RoomIsEmpty()
+        {
+            foreach (var item in room.Items)
+                if (item != null)
+                    return false;
+            return true;
+        }
+
+        void ContinueLastRoom()
+        {
+            var last = SaveData.LastRoom;
+            if (last == null)
+                return;
+            if (RestoreFromLookbook(last))
+                Debug.Log("[PaletteRoom] Continued the room from last time.");
+        }
+
+        void RequestExit()
+        {
+            string body = RoomIsEmpty()
+                ? "Are you sure you want to leave? Your palettes, color wheel colors and lookbook are saved on the headset."
+                : "Are you sure you want to leave? Your palettes, color wheel colors and lookbook are saved, and this room will be waiting under Continue last room.";
+            m_Confirm.Show("Exit Palette Room?", body, "Exit", ExitExperience);
+        }
+
+        void ExitExperience()
+        {
+            SaveRoomNow();
+            Debug.Log("[PaletteRoom] Exiting.");
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        void OnFurnitureMoved(FurnitureItem item)
+        {
+            QueueRoomSave();
+            NotifyTutorial(TutorialGoal.MoveFurniture);
+        }
+
+        void QueueRoomSave()
+        {
+            if (m_RoomSave != null)
+                StopCoroutine(m_RoomSave);
+            m_RoomSave = StartCoroutine(SaveRoomSoon());
+        }
+
+        // Waiting lets drop-in animations finish and folds a burst of changes into one write.
+        IEnumerator SaveRoomSoon()
+        {
+            yield return new WaitForSecondsRealtime(RoomSaveDelay);
+            m_RoomSave = null;
+            SaveRoomNow();
+        }
+
+        void SaveRoomNow()
+        {
+            if (m_RoomSave != null)
+            {
+                StopCoroutine(m_RoomSave);
+                m_RoomSave = null;
+            }
+            // An empty room isn't saved, so clearing the room (or a fresh start) keeps last time's room.
+            if (room == null || m_Camera == null || m_Palettes == null || RoomIsEmpty())
+                return;
+            var palette = m_Palettes.Current;
+            SaveData.SaveLastRoom(new Lookbook.Entry
+            {
+                title = "Last room",
+                date = System.DateTime.Now.ToString("MMM d, h:mm tt"),
+                paletteName = palette.name,
+                paletteHex = Lookbook.PaletteHex(palette),
+                pieces = Lookbook.Capture(room.Items, m_Camera.transform.position, out _, out _),
+            });
+        }
+
+        // The headset going to the home screen or to sleep pauses the app; it may never come back.
+        void OnApplicationPause(bool paused)
+        {
+            if (paused)
+                SaveRoomNow();
+        }
+
+        void OnApplicationQuit() => SaveRoomNow();
 
         // ---- design briefs, reveal, lookbook ------------------------------------------------------
 
@@ -146,7 +291,7 @@ namespace PaletteRoom
             AddMovable(m_Lookbook.gameObject, recallable: false);
             m_Lookbook.gameObject.SetActive(false);
             m_Lookbook.Closed += ShowDock;
-            m_Lookbook.RestoreRequested += RestoreFromLookbook;
+            m_Lookbook.RestoreRequested += entry => RestoreFromLookbook(entry);
 
             m_SendList = NewPanel<SendListPanel>("Send List Panel");
             m_SendList.Build(m_Camera);
@@ -193,6 +338,8 @@ namespace PaletteRoom
             yield return m_Lookbook.gameObject;
             yield return m_Tracker.gameObject;
             yield return m_SendList.gameObject;
+            yield return m_Tutorial.gameObject;
+            yield return m_Confirm.gameObject;
         }
 
         void HideFloatingPanels()
@@ -247,27 +394,45 @@ namespace PaletteRoom
             Debug.Log($"[PaletteRoom] Started brief \"{brief.title}\".");
         }
 
-        void RestoreFromLookbook(Lookbook.Entry entry)
+        /// <summary>
+        /// Lays a saved design out if it fits this room. If it doesn't, the room is left as it is and the
+        /// user is told why; from the welcome panel they're offered an empty room instead.
+        /// </summary>
+        bool RestoreFromLookbook(Lookbook.Entry entry)
         {
+            if (!room.Restore(entry, m_Camera.transform, m_Floor.FloorY, out var problem))
+            {
+                bool fromWelcome = welcomePanel.gameObject.activeSelf;
+                m_Confirm.Show("This room doesn't fit here",
+                    $"\"{entry.title}\" was made for a different space. {problem}",
+                    fromWelcome ? "Start a new room" : "OK",
+                    fromWelcome ? (System.Action)StartMyRoom : null);
+                return false;
+            }
             m_Lookbook.gameObject.SetActive(false);
             m_SendList.gameObject.SetActive(false);
             m_Tracker.End();
             welcomePanel.Hide();
-            room.Restore(entry, m_Camera.transform, m_Floor.FloorY);
             var palette = Lookbook.PaletteOf(entry);
             if (palette != null)
                 m_Palettes.SetPalette(palette);
             paletteDock.gameObject.SetActive(true);
             m_DockPanel.PlaceIfNeeded();
+            return true;
         }
 
-        void OnDestroy() => FurnitureClickDetector.Clicked -= OpenObjectColor;
+        void OnDestroy()
+        {
+            FurnitureClickDetector.Clicked -= OpenObjectColor;
+            FurnitureClickDetector.Moved -= OnFurnitureMoved;
+        }
 
         void OpenObjectColor(FurnitureItem item)
         {
             if (item == null || welcomePanel.gameObject.activeSelf)
                 return;
             m_ObjectColor.Open(item);
+            NotifyTutorial(TutorialGoal.ClickFurniture);
         }
 
         IEnumerator Start()
@@ -311,8 +476,14 @@ namespace PaletteRoom
         void OnRoomColorsMatched(RoomColorScanner.Match match) =>
             m_MatchBanner.Show(match, () => m_Palettes.SetPalette(match.palette));
 
+        /// <summary>The first sample room comes with the tour; after that it's just the room.</summary>
         void StartSampleRoom()
         {
+            if (!SaveData.TutorialSeen)
+            {
+                StartTutorial();
+                return;
+            }
             room.SpawnSampleRoom(m_Camera.transform, m_Floor.FloorY);
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
@@ -332,6 +503,7 @@ namespace PaletteRoom
         {
             var movable = panel.AddComponent<MovablePanel>();
             movable.Setup(m_Camera.transform, m_Camera, recallable);
+            movable.Grabbed += () => NotifyTutorial(TutorialGoal.MovePanel);
             return movable;
         }
 
@@ -375,8 +547,31 @@ namespace PaletteRoom
                 if (!(module is XRUIInputModule))
                     Destroy(module);
             }
-            if (eventSystem.GetComponent<XRUIInputModule>() == null)
-                eventSystem.gameObject.AddComponent<XRUIInputModule>();
+            var input = eventSystem.GetComponent<XRUIInputModule>();
+            if (input == null)
+                input = eventSystem.gameObject.AddComponent<XRUIInputModule>();
+            input.trackedDeviceDragThresholdMultiplier = PinchDragThreshold;
+        }
+
+        // Pinching wobbles the aim ray more than XRI's default allows, and a press on anything in a scrolling
+        // list then turns into a scroll and is lost. About 3 cm on a panel at arm's length.
+        const float PinchDragThreshold = 6f;
+        const float PokeDepth = 0.03f, NearGrabRadius = 0.03f;
+
+        /// <summary>
+        /// A poke or near grab in range takes over from the hand's ray and drops any press it was making.
+        /// At the rig's defaults that range is 10 cm, so just reaching towards a panel lost presses; now the
+        /// hand has to really touch the panel or piece.
+        /// </summary>
+        static void TightenHandReach()
+        {
+            foreach (var poke in FindObjectsByType<XRPokeInteractor>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                poke.pokeDepth = PokeDepth;
+            foreach (var nearFar in FindObjectsByType<NearFarInteractor>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (nearFar.nearInteractionCaster is SphereInteractionCaster near)
+                    near.castRadius = NearGrabRadius;
+            }
         }
     }
 }

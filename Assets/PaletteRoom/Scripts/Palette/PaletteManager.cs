@@ -7,6 +7,7 @@ namespace PaletteRoom
     /// <summary>
     /// Holds the active palette and restyles every registered furniture item with the 60-30-10 rule:
     /// Dominant role -> dominant color, Secondary -> secondary, Accent -> accent alternating with highlight.
+    /// The user's own palettes and the palette in use are kept between sessions (see <see cref="SaveData"/>).
     /// </summary>
     public class PaletteManager : MonoBehaviour
     {
@@ -17,16 +18,30 @@ namespace PaletteRoom
         readonly List<FurnitureItem> m_Items = new List<FurnitureItem>();
         ColorPalette m_Current;
 
-        public ColorPalette Current => m_Current ?? PalettePresets.Default;
+        public ColorPalette Current
+        {
+            get
+            {
+                EnsureLoaded();
+                return m_Current ?? PalettePresets.Default;
+            }
+        }
         public IReadOnlyList<FurnitureItem> Items => m_Items;
 
         readonly List<ColorPalette> m_Customs = new List<ColorPalette>();
 
         /// <summary>Palettes the user made on the color wheel, oldest first.</summary>
-        public IReadOnlyList<ColorPalette> Customs => m_Customs;
+        public IReadOnlyList<ColorPalette> Customs
+        {
+            get
+            {
+                EnsureLoaded();
+                return m_Customs;
+            }
+        }
 
         /// <summary>The user's most recent palette, or null until they make one.</summary>
-        public ColorPalette Custom => m_Customs.Count > 0 ? m_Customs[m_Customs.Count - 1] : null;
+        public ColorPalette Custom => Customs.Count > 0 ? m_Customs[m_Customs.Count - 1] : null;
 
         public event Action<ColorPalette> PaletteChanged;
         /// <summary>Raised when the user saves a new palette.</summary>
@@ -41,7 +56,34 @@ namespace PaletteRoom
                 return;
             }
             Instance = this;
-            m_Current = PalettePresets.Default;
+            EnsureLoaded();
+        }
+
+        bool m_Loaded;
+
+        // Loaded on first use as well as in Awake: other components' Awake may ask for the palettes first.
+        void EnsureLoaded()
+        {
+            if (m_Loaded)
+                return;
+            m_Loaded = true;
+            m_Customs.AddRange(SaveData.CustomPalettes());
+            m_Current = Find(SaveData.CurrentPalette) ?? PalettePresets.Default;
+        }
+
+        /// <summary>The user's palette or the preset called <paramref name="name"/>, or null.</summary>
+        public ColorPalette Find(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+            EnsureLoaded();
+            for (int i = m_Customs.Count - 1; i >= 0; i--)
+                if (m_Customs[i].name == name)
+                    return m_Customs[i];
+            foreach (var preset in PalettePresets.All)
+                if (preset.name == name)
+                    return preset;
+            return null;
         }
 
         void OnDestroy()
@@ -66,8 +108,9 @@ namespace PaletteRoom
         {
             if (palette == null)
                 return;
-            var saved = palette.Clone($"My palette {m_Customs.Count + 1}");
+            var saved = palette.Clone($"My palette {Customs.Count + 1}");
             m_Customs.Add(saved);
+            SaveData.SaveCustomPalettes(m_Customs);
             CustomPaletteChanged?.Invoke(saved);
             SetPalette(saved);
         }
@@ -81,6 +124,7 @@ namespace PaletteRoom
             if (palette == null)
                 return;
             m_Current = palette;
+            SaveData.CurrentPalette = palette.name;
             if (PaletteWave.Instance != null && PaletteWave.Instance.isActiveAndEnabled && m_Items.Count > 0)
             {
                 PaletteWave.Instance.Play(m_Items, palette, item =>

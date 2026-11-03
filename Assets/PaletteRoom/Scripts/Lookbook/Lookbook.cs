@@ -174,8 +174,20 @@ namespace PaletteRoom
             return pieces;
         }
 
+        public static string[] PaletteHex(ColorPalette palette) => new[]
+        {
+            Hex(palette.dominant), Hex(palette.secondary), Hex(palette.accent), Hex(palette.neutral), Hex(palette.highlight),
+        };
+
+        static string Hex(Color c) => "#" + ColorUtility.ToHtmlStringRGB(c);
+
         public static ColorPalette PaletteOf(Entry entry)
         {
+            // The user's own palettes are found by name too, as long as the colors still match.
+            var known = PaletteManager.Instance != null ? PaletteManager.Instance.Find(entry.paletteName) : null;
+            if (known != null && (entry.paletteHex == null || entry.paletteHex.Length == 0 ||
+                                  string.Equals(Hex(known.dominant), entry.paletteHex[0], StringComparison.OrdinalIgnoreCase)))
+                return known;
             foreach (var p in PalettePresets.All)
                 if (p.name == entry.paletteName)
                     return p;

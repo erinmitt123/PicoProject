@@ -16,6 +16,9 @@ namespace PaletteRoom
         /// <summary>Raised when the user clicks (rather than drags) a piece.</summary>
         public static event Action<FurnitureItem> Clicked;
 
+        /// <summary>Raised when the user drags a piece somewhere and lets go.</summary>
+        public static event Action<FurnitureItem> Moved;
+
         XRGrabInteractable m_Grab;
         FurnitureItem m_Item;
         float m_PressedAt;
@@ -57,6 +60,8 @@ namespace PaletteRoom
             bool still = Vector3.Distance(transform.position, m_PressedPos) <= MaxClickMove;
             if (quick && still)
                 RaiseClicked(m_Item);
+            else if (!still && m_Item != null)
+                Moved?.Invoke(m_Item);
         }
 
         /// <summary>Also used by Editor test mode for mouse clicks.</summary>

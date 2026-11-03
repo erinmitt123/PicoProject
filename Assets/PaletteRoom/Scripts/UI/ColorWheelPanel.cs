@@ -9,7 +9,8 @@ namespace PaletteRoom
     /// <summary>
     /// Build-your-own palette: pick a base color on an RYB color wheel, choose one of the harmony
     /// suggestions built from it, optionally retouch individual colors, then "Done" restyles the room.
-    /// Reopening restores the user's palette so it can keep being changed.
+    /// Reopening restores the user's palette so it can keep being changed; the set colors are kept between
+    /// sessions too.
     /// </summary>
     public class ColorWheelPanel : MonoBehaviour
     {
@@ -95,6 +96,10 @@ namespace PaletteRoom
 
             var done = UIKit.Button(p, "Done", "Done", 16f, true, Done);
             UIKit.Place((RectTransform)done.transform, W - Pad - 120f, SlotY, 120f, SlotH);
+
+            m_Set.AddRange(SaveData.WheelColors());
+            foreach (var c in m_Set)
+                m_NextOrder = Mathf.Max(m_NextOrder, c.order);
         }
 
         /// <summary>Shows the panel in front of the user, restoring their palette if they have one.</summary>
@@ -156,6 +161,7 @@ namespace PaletteRoom
             var color = ColorHarmony.FromRyb(m_Hue, m_Sat, m_Val);
             m_Set.RemoveAll(s => s.slot == slot);
             m_Set.Add(new ColorHarmony.SetColor(slot, color, ++m_NextOrder));
+            SaveSetColors();
             Recompute();
             m_Selected = 0;
             m_Working = m_Suggestions[0].palette.Clone();
@@ -174,7 +180,8 @@ namespace PaletteRoom
             var s = m_Suggestions[index];
             m_Selected = index;
             m_Working = s.palette.Clone();
-            m_Set.RemoveAll(c => s.replaced.Contains(c.slot));
+            if (m_Set.RemoveAll(c => s.replaced.Contains(c.slot)) > 0)
+                SaveSetColors();
             ShowSlotOnWheel();
             RefreshAll();
         }
@@ -189,11 +196,14 @@ namespace PaletteRoom
         void ClearSetColors()
         {
             m_Set.Clear();
+            SaveSetColors();
             m_Seed = m_Working.dominant;
             m_Selected = -1;
             Recompute();
             RefreshAll();
         }
+
+        void SaveSetColors() => SaveData.SaveWheelColors(m_Set);
 
         void Recompute() => m_Suggestions = ColorHarmony.Suggest(m_Set, m_Seed);
 

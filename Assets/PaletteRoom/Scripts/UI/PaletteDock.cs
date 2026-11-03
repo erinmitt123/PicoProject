@@ -9,7 +9,7 @@ namespace PaletteRoom
     /// <summary>
     /// The palette panel: filter chips (by color-wheel harmony, or just the user's own), a scrolling grid
     /// of palette cards with five swatches each, and buttons for the color wheel, shopping list, design
-    /// briefs, lookbook and floor.
+    /// briefs, lookbook, floor, the tutorial and exiting.
     /// Palettes the user saves on the color wheel appear here alongside the presets. Picking a card
     /// restyles the room.
     /// </summary>
@@ -52,6 +52,10 @@ namespace PaletteRoom
         public event Action ShoppingListRequested;
         public event Action BriefsRequested;
         public event Action LookbookRequested;
+        public event Action TutorialRequested;
+        public event Action ExitRequested;
+        /// <summary>The user picked a palette card.</summary>
+        public event Action<ColorPalette> PalettePicked;
 
         public void Build(Camera eventCamera, PaletteManager palettes, FloorTapCalibrator calibrator)
         {
@@ -71,7 +75,8 @@ namespace PaletteRoom
             float buttonsY = gridY + gridH + Gap;
             float goalsY = buttonsY + ButtonH + Gap;
             float floorY = goalsY + ButtonH + Gap;
-            float height = floorY + ButtonH + Pad;
+            float exitY = floorY + ButtonH + Gap;
+            float height = exitY + ButtonH + Pad;
 
             var canvas = UIKit.CreateWorldCanvas("Palette Dock Canvas", new Vector2(width, height), transform, eventCamera);
             var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 14f);
@@ -114,6 +119,11 @@ namespace PaletteRoom
             UIKit.Place((RectTransform)floor.transform, Pad, floorY, width - 2 * Pad, ButtonH);
             m_FooterLabel = floor.GetComponentInChildren<TextMeshProUGUI>();
 
+            var tutorial = UIKit.Button(p, "Tutorial", "Tutorial", 10f, false, () => TutorialRequested?.Invoke());
+            UIKit.Place((RectTransform)tutorial.transform, Pad, exitY, half, ButtonH);
+            var exit = UIKit.Button(p, "Exit", "Exit", 10f, false, () => ExitRequested?.Invoke());
+            UIKit.Place((RectTransform)exit.transform, Pad + half + Gap, exitY, half, ButtonH);
+
             m_Palettes.PaletteChanged += _ => RefreshSelection();
             m_Palettes.CustomPaletteChanged += OnCustomSaved;
             m_Calibrator.Completed += RefreshFooter;
@@ -144,7 +154,11 @@ namespace PaletteRoom
             var button = card.gameObject.AddComponent<Button>();
             button.targetGraphic = card;
             button.colors = UIKit.SecondaryColors();
-            button.onClick.AddListener(() => m_Palettes.SetPalette(palette));
+            button.onClick.AddListener(() =>
+            {
+                m_Palettes.SetPalette(palette);
+                PalettePicked?.Invoke(palette);
+            });
             card.gameObject.AddComponent<ForgivingClick>();
 
             var name = UIKit.Label(card.transform, "Name", palette.name, 9.5f, UIKit.TextColor, style: FontStyles.Bold);

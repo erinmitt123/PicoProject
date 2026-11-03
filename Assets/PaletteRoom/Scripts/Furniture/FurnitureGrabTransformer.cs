@@ -215,7 +215,7 @@ namespace PaletteRoom
             float yaw = targetPose.rotation.eulerAngles.y;
             targetPose.rotation = Quaternion.Euler(0f, yaw, 0f);
 
-            if (m_Room == null || !m_Item.BlocksFloor)
+            if (m_Room == null || m_Item.Mount != FurnitureMount.Floor)
                 return;
             bool wasInvalid = m_Invalid;
             m_Blocker = m_Room.WhatBlocks(m_Item, targetPose.position, targetPose.rotation);
