@@ -12,11 +12,14 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 namespace PaletteRoom
 {
     /// <summary>
-    /// Entry point: welcome panel (with a room-scan prompt when the room isn't set up) → the user's room,
-    /// the sample room or last time's room → palette dock, with the color wheel and shopping list opened from
-    /// the dock. Owns floor detection and keeps furniture resting on the floor. Also runs the tutorial (on the
-    /// first sample room, and from the dock), the confirmed Exit, and saving the room in progress so it can be
-    /// continued next time.
+    /// Entry point: a short intro → welcome panel (on a first visit it only explains the app and offers the
+    /// guided tour; a room-scan prompt when the room isn't set up) → the user's room, the sample room or last
+    /// time's room → palette dock, with the color wheel and shopping list opened from the dock. Owns floor
+    /// detection and keeps furniture resting on the floor. Also runs the guided tour (which furnishes an empty
+    /// room piece by piece, pointing at each control), Settings (sound, language, main menu, quit), and
+    /// saving the room in progress so it can be continued next time. Runs room-scale (floor tracking, Stage
+    /// Mode, a prompt for a room-scale boundary when the headset's is stationary) and plays background music,
+    /// which moves into a radio when one is placed.
     /// </summary>
     [RequireComponent(typeof(PaletteManager), typeof(FloorDetector), typeof(FloorTapCalibrator))]
     public class PaletteRoomApp : MonoBehaviour
@@ -58,14 +61,23 @@ namespace PaletteRoom
                 xrOrigin = FindFirstObjectByType<XROrigin>();
             m_Camera = xrOrigin != null ? xrOrigin.Camera : Camera.main;
             UIKit.MouseInput = TestModeActive; // must be set before any canvas is built
+            RoomScale.UseRoomScaleTracking(xrOrigin);
+            AudioLevels.Ensure();
+            CjkFont.Ensure(); // Chinese glyphs, before any label is made
+            Icons.Ensure();   // button icons, likewise
 
             m_Palettes = GetComponent<PaletteManager>();
+            // Every window carries a strip of the palette in use.
+            UIKit.SetThemePalette(m_Palettes.Current);
+            m_Palettes.PaletteChanged += UIKit.SetThemePalette;
             m_Floor = GetComponent<FloorDetector>();
             m_Calibrator = GetComponent<FloorTapCalibrator>();
             m_Calibrator.Configure(m_Floor, m_Camera.transform, floorReticle);
 
             EnsureEventSystem();
             TightenHandReach();
+            // Look and pinch where the headset tracks the eyes; hand rays otherwise.
+            gameObject.AddComponent<GazePinch>().Setup(m_Camera.transform);
 
             m_Scene = GetComponent<SceneObstacles>();
             m_Scanner = gameObject.AddComponent<RoomScanner>();
@@ -73,17 +85,21 @@ namespace PaletteRoom
             welcomePanel.StartSampleRoomRequested += StartSampleRoom;
             welcomePanel.StartMyRoomRequested += StartMyRoom;
             welcomePanel.ContinueRequested += ContinueLastRoom;
-            welcomePanel.ExitRequested += RequestExit;
+            welcomePanel.StartTutorialRequested += StartTutorial;
+            welcomePanel.SettingsRequested += OpenSettings;
+            welcomePanel.BoundaryCheckRequested += CheckBoundary;
             welcomePanel.gameObject.SetActive(false);
 
             paletteDock.Build(m_Camera, m_Palettes, m_Calibrator);
             // World-anchored and grabbable; the menu button (M in the Editor) recalls it front-left.
             m_DockPanel = AddMovable(paletteDock.gameObject, recallable: true);
-            m_DockPanel.SetRecallPose(0.7f, -30f, 0.2f);
+            // The palette with its two side rails is about 70 cm across: a little further off, nearer the middle.
+            m_DockPanel.SetRecallPose(0.85f, -20f, 0.2f);
             paletteDock.ColorWheelRequested += OpenColorWheel;
             paletteDock.ShoppingListRequested += OpenShoppingList;
             paletteDock.TutorialRequested += StartTutorial;
             paletteDock.ExitRequested += RequestExit;
+            paletteDock.SettingsRequested += OpenSettings;
             paletteDock.PalettePicked += _ => NotifyTutorial(TutorialGoal.PickPalette);
             paletteDock.gameObject.SetActive(false);
 
@@ -96,9 +112,10 @@ namespace PaletteRoom
             AddMovable(shoppingList.gameObject, recallable: false);
             shoppingList.AddRequested += (kind, variant) => room.Add(kind, variant, m_Camera.transform, m_Floor.FloorY);
             shoppingList.PickUpRequested += PickUpFromList;
-            shoppingList.AddRequested += (_, __) => NotifyTutorial(TutorialGoal.AddPiece);
-            shoppingList.PickUpRequested += (_, __, ___) => NotifyTutorial(TutorialGoal.AddPiece);
+            shoppingList.AddRequested += (kind, _) => NotifyTutorial(TutorialGoal.AddPiece, kind.ToString());
+            shoppingList.PickUpRequested += (kind, _, __) => NotifyTutorial(TutorialGoal.AddPiece, kind.ToString());
             shoppingList.Closed += ShowDock;
+            shoppingList.Closed += () => NotifyTutorial(TutorialGoal.CloseShoppingList);
             shoppingList.gameObject.SetActive(false);
 
             // Click (rather than drag) a piece to choose its colors.
@@ -131,6 +148,7 @@ namespace PaletteRoom
 
             // The room in progress is saved whenever it changes, so it can be continued next time.
             room.Changed += QueueRoomSave;
+            room.Changed += UpdateRadio; // the music plays from a radio in the room
             m_Palettes.PaletteChanged += _ => QueueRoomSave();
             m_Palettes.CustomPaletteChanged += _ => NotifyTutorial(TutorialGoal.SavePalette);
             FurnitureClickDetector.Moved += OnFurnitureMoved;
@@ -142,32 +160,171 @@ namespace PaletteRoom
 
         TutorialPanel m_Tutorial;
         MovablePanel m_TutorialPanel;
+        TutorialPointer m_Pointer;
         ConfirmDialog m_Confirm;
+        SettingsPanel m_Settings;
         Coroutine m_RoomSave;
 
         void BuildTutorialAndExit()
         {
+            m_Pointer = NewPanel<TutorialPointer>("Tutorial Pointer");
+            m_Pointer.Build(m_Camera);
             m_Tutorial = NewPanel<TutorialPanel>("Tutorial Panel");
-            m_Tutorial.Build(m_Camera);
+            m_Tutorial.Build(m_Camera, m_Pointer, ResolveTutorialTarget);
+            m_Tutorial.StepShown += OnTutorialStep;
             m_TutorialPanel = AddMovable(m_Tutorial.gameObject, recallable: false);
-            m_TutorialPanel.SetRecallPose(0.9f, 30f, 0.12f); // front-right, opposite the dock
+            // Front-right, opposite the dock, and wide enough to clear the big panels that open straight
+            // ahead (the 60 cm color wheel at 75 cm spans ±22°; this card starts at about 26°).
+            m_TutorialPanel.SetRecallPose(0.9f, 40f, 0.12f);
 
             m_Confirm = NewPanel<ConfirmDialog>("Confirm Dialog");
             m_Confirm.Build(m_Camera);
+
+            m_Settings = NewPanel<SettingsPanel>("Settings Panel");
+            m_Settings.Build(m_Camera);
+            m_Settings.Closed += OnSettingsClosed;
+            m_Settings.MainMenuRequested += ReturnToMainMenu;
+            m_Settings.QuitRequested += RequestExit;
+            AddMovable(m_Settings.gameObject, recallable: false);
+            m_Settings.gameObject.SetActive(false);
+
+            // Background music, made in code; it fades in once it's ready and follows the Music slider.
+            if (GetComponent<AmbientMusic>() == null)
+                gameObject.AddComponent<AmbientMusic>();
         }
 
-        void NotifyTutorial(TutorialGoal goal)
+        /// <summary>The music moves into the first radio in the room, or back around the user when there's none.</summary>
+        void UpdateRadio()
+        {
+            var music = AmbientMusic.Instance;
+            if (music == null)
+                return;
+            Transform radio = null;
+            foreach (var item in room.Items)
+            {
+                if (item != null && item.Kind == FurnitureKind.Radio)
+                {
+                    radio = item.transform;
+                    break;
+                }
+            }
+            music.SetRadio(radio);
+        }
+
+        /// <summary>
+        /// Finds what a tutorial step points at, by the name in tutorial.json: a button on a panel, the dock's
+        /// grab bar, a shopping-list tile's + button, or a piece in the room. Null while it isn't on show.
+        /// </summary>
+        Component ResolveTutorialTarget(string target)
+        {
+            switch (target)
+            {
+                case "tutorial.next": return m_Tutorial.NextButton;
+                case "dock.bar": return paletteDock.gameObject.activeInHierarchy ? m_DockPanel.Bar : null;
+                case "dock.shopping": return DockButton("Shopping List");
+                case "dock.wheel": return DockButton("Color Wheel");
+                case "dock.briefs": return DockButton("Design Briefs");
+                case "dock.lookbook": return DockButton("Lookbook");
+                case "dock.settings": return DockButton("Settings");
+                case "dock.palette": return TutorialPointer.FindActive(paletteDock.transform, "Card");
+                case "shop.close": return shoppingList.gameObject.activeInHierarchy ? shoppingList.CloseButton : null;
+            }
+            const string add = "shop.add:", piecePrefix = "item:";
+            if (target.StartsWith(add) && System.Enum.TryParse(target.Substring(add.Length), out FurnitureKind kind))
+            {
+                // With the list closed, point at the button that opens it.
+                return shoppingList.gameObject.activeInHierarchy ? shoppingList.FocusOn(kind) : DockButton("Shopping List");
+            }
+            if (target.StartsWith(piecePrefix) && System.Enum.TryParse(target.Substring(piecePrefix.Length), out FurnitureKind pieceKind))
+            {
+                FurnitureItem any = null;
+                for (int i = room.Items.Count - 1; i >= 0; i--)
+                {
+                    var piece = room.Items[i];
+                    if (piece == null)
+                        continue;
+                    if (piece.Kind == pieceKind)
+                        return piece; // the newest one
+                    if (any == null)
+                        any = piece;
+                }
+                return any; // that piece was never added: any piece teaches the same thing
+            }
+            return null;
+        }
+
+        RectTransform DockButton(string name) => TutorialPointer.FindActive(paletteDock.transform, name) as RectTransform;
+
+        /// <summary>A step about the dock brings the dock back if a big panel had put it away.</summary>
+        void OnTutorialStep(string target)
+        {
+            if (target.StartsWith("dock."))
+                ShowDock();
+        }
+
+        /// <summary>Back to the welcome panel from Settings. The room stays as it is, saved as "Continue last room".</summary>
+        void ReturnToMainMenu()
+        {
+            m_Confirm.Cancel();
+            if (m_Tutorial.Running)
+                m_Tutorial.End(completed: false);
+            m_Tracker.End();
+            HideFloatingPanels();
+            m_ObjectColor.Close();
+            m_SendList.gameObject.SetActive(false);
+            m_MatchBanner.gameObject.SetActive(false);
+            SaveRoomNow();
+            welcomePanel.Show();
+            CheckBoundary();
+            Debug.Log("[PaletteRoom] Back to the main menu.");
+        }
+
+        bool m_WelcomeBehindSettings;
+
+        /// <summary>
+        /// Settings opens in front of the user. Opened from the welcome panel it takes that panel's place
+        /// (two panels stacked in depth are hard to read) and the welcome panel returns when it closes.
+        /// </summary>
+        void OpenSettings()
+        {
+            m_Confirm.Cancel();
+            m_WelcomeBehindSettings = welcomePanel.gameObject.activeSelf;
+            if (m_WelcomeBehindSettings)
+                welcomePanel.gameObject.SetActive(false);
+            m_Settings.ShowMainMenu(!m_WelcomeBehindSettings);
+            m_Settings.Open();
+            PanelSpace.MakeRoomFor(m_Settings.transform, m_Camera.transform);
+        }
+
+        void OnSettingsClosed()
+        {
+            if (m_WelcomeBehindSettings)
+                welcomePanel.gameObject.SetActive(true);
+            m_WelcomeBehindSettings = false;
+        }
+
+        /// <summary>Reads the headset's boundary; a stationary one gets the welcome panel's room-scale notice.</summary>
+        void CheckBoundary()
+        {
+            if (TestModeActive)
+                return;
+            welcomePanel.SetBoundary(RoomScale.Check(out _));
+        }
+
+        void NotifyTutorial(TutorialGoal goal, string detail = null)
         {
             if (m_Tutorial != null)
-                m_Tutorial.Notify(goal);
+                m_Tutorial.Notify(goal, detail);
         }
 
-        /// <summary>Runs the tour in the room as it is; an empty room gets the sample room to practise on.</summary>
+        /// <summary>
+        /// Runs the tour in the room as it is. On a first visit that's an empty room, and the tour furnishes
+        /// it one piece at a time from the shopping list.
+        /// </summary>
         void StartTutorial()
         {
             m_Confirm.Cancel();
-            if (RoomIsEmpty())
-                room.SpawnSampleRoom(m_Camera.transform, m_Floor.FloorY);
+            m_Settings.gameObject.SetActive(false);
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
             m_DockPanel.PlaceIfNeeded();
@@ -254,13 +411,25 @@ namespace PaletteRoom
         }
 
         // The headset going to the home screen or to sleep pauses the app; it may never come back.
+        // Coming back (perhaps from setting up a boundary in the PICO settings) reads the boundary again.
         void OnApplicationPause(bool paused)
         {
             if (paused)
+            {
                 SaveRoomNow();
+                AudioLevels.Save();
+            }
+            else if (welcomePanel != null && welcomePanel.gameObject.activeSelf)
+            {
+                CheckBoundary();
+            }
         }
 
-        void OnApplicationQuit() => SaveRoomNow();
+        void OnApplicationQuit()
+        {
+            SaveRoomNow();
+            AudioLevels.Save();
+        }
 
         // ---- design briefs, reveal, lookbook ------------------------------------------------------
 
@@ -282,7 +451,7 @@ namespace PaletteRoom
             m_Tracker = NewPanel<BriefTracker>("Brief Tracker");
             m_Tracker.Build(m_Camera, room, m_Palettes);
             var trackerMove = AddMovable(m_Tracker.gameObject, recallable: false);
-            trackerMove.SetRecallPose(0.75f, 32f, 0.15f); // front-right, opposite the dock
+            trackerMove.SetRecallPose(0.75f, 40f, 0.15f); // front-right, opposite the dock, clear of the big panels
             m_Tracker.RevealRequested += () => m_Reveal.Play(m_Tracker.Brief, m_Tracker.Stars);
             m_Tracker.ExitRequested += m_Tracker.End;
 
@@ -315,8 +484,18 @@ namespace PaletteRoom
             m_Reveal = gameObject.AddComponent<RevealSequence>();
             m_Reveal.Configure(room, m_Palettes, m_Camera, RevealHides);
 
-            paletteDock.BriefsRequested += () => { HideFloatingPanels(); m_Briefs.Open(m_Camera.transform); };
-            paletteDock.LookbookRequested += () => { HideFloatingPanels(); m_Lookbook.Open(m_Camera.transform); };
+            paletteDock.BriefsRequested += () =>
+            {
+                HideFloatingPanels();
+                m_Briefs.Open(m_Camera.transform);
+                PanelSpace.MakeRoomFor(m_Briefs.transform, m_Camera.transform);
+            };
+            paletteDock.LookbookRequested += () =>
+            {
+                HideFloatingPanels();
+                m_Lookbook.Open(m_Camera.transform, canReveal: !RoomIsEmpty());
+                PanelSpace.MakeRoomFor(m_Lookbook.transform, m_Camera.transform);
+            };
         }
 
         T NewPanel<T>(string name) where T : Component
@@ -340,6 +519,7 @@ namespace PaletteRoom
             yield return m_SendList.gameObject;
             yield return m_Tutorial.gameObject;
             yield return m_Confirm.gameObject;
+            yield return m_Settings.gameObject;
         }
 
         void HideFloatingPanels()
@@ -404,7 +584,8 @@ namespace PaletteRoom
             {
                 bool fromWelcome = welcomePanel.gameObject.activeSelf;
                 m_Confirm.Show("This room doesn't fit here",
-                    $"\"{entry.title}\" was made for a different space. {problem}",
+                    Loc.F("\"{0}\" was made for a different space. {1}", Loc.T(entry.title),
+                        Loc.IsEnglish ? problem : Loc.T("It doesn't fit around the walls and furniture here.")),
                     fromWelcome ? "Start a new room" : "OK",
                     fromWelcome ? (System.Action)StartMyRoom : null);
                 return false;
@@ -432,6 +613,8 @@ namespace PaletteRoom
             if (item == null || welcomePanel.gameObject.activeSelf)
                 return;
             m_ObjectColor.Open(item);
+            var toPanel = m_ObjectColor.transform.position - m_Camera.transform.position;
+            PanelSpace.KeepClear(m_ObjectColor.transform, m_Camera.transform, Vector3.Dot(toPanel, m_Camera.transform.right));
             NotifyTutorial(TutorialGoal.ClickFurniture);
         }
 
@@ -442,9 +625,16 @@ namespace PaletteRoom
                 m_Camera.gameObject.AddComponent<EditorTestCamera>();
                 m_Floor.UseSimulatedFloor();
                 yield return null; // let the camera stand up before placing panels
-                welcomePanel.Show();
                 if (autoStartSampleRoom)
+                {
+                    welcomePanel.Show();
                     StartSampleRoom();
+                }
+                else
+                {
+                    yield return PlayIntro();
+                    welcomePanel.Show();
+                }
                 Debug.Log("[PaletteRoom] Editor test mode: floor simulated, mouse clicks on, right-drag to look.");
                 yield break;
             }
@@ -456,9 +646,10 @@ namespace PaletteRoom
             while (head.localPosition.sqrMagnitude < 0.0001f && Time.realtimeSinceStartup < timeout)
                 yield return null;
             yield return null;
+            yield return PlayIntro();
+            // The opening is just the welcome panel; the room-color match waits until a fresh room is started.
             welcomePanel.Show();
-            m_MatchBanner.ShowScanning();
-            m_ColorScanner.Scan();
+            CheckBoundary(); // room-scale: a stationary boundary gets a prompt to set up a custom one
 
             // The saved room set-up arrives through plane detection within a few seconds. If no walls have
             // come by then, the room hasn't been set up: ask for a scan before the user starts.
@@ -472,18 +663,21 @@ namespace PaletteRoom
             }
         }
 
+        /// <summary>The launch intro: the palette's swatches and the title, about four seconds.</summary>
+        IEnumerator PlayIntro()
+        {
+            var intro = NewPanel<IntroSequence>("Intro");
+            yield return intro.Play(m_Camera);
+        }
+
         // The room's colors change as the result appears, not before the spinner has had its moment.
         void OnRoomColorsMatched(RoomColorScanner.Match match) =>
             m_MatchBanner.Show(match, () => m_Palettes.SetPalette(match.palette));
 
-        /// <summary>The first sample room comes with the tour; after that it's just the room.</summary>
+        /// <summary>A furnished sample room to try palettes on straight away.</summary>
         void StartSampleRoom()
         {
-            if (!SaveData.TutorialSeen)
-            {
-                StartTutorial();
-                return;
-            }
+            room.Clear();
             room.SpawnSampleRoom(m_Camera.transform, m_Floor.FloorY);
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
@@ -493,9 +687,16 @@ namespace PaletteRoom
         /// <summary>The user's own room as it is: nothing is placed, the dock opens and pieces come from the shopping list.</summary>
         void StartMyRoom()
         {
+            room.Clear(); // from the main menu, a new room starts empty (the last one stays saved)
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
             m_DockPanel.PlaceIfNeeded();
+            // A fresh room: read its real colors and suggest the palette that suits them best.
+            if (!TestModeActive)
+            {
+                m_MatchBanner.ShowScanning();
+                m_ColorScanner.Scan();
+            }
             Debug.Log("[PaletteRoom] Started in the user's own room.");
         }
 
@@ -514,6 +715,7 @@ namespace PaletteRoom
             paletteDock.gameObject.SetActive(false);
             shoppingList.gameObject.SetActive(false);
             colorWheel.Open();
+            PanelSpace.MakeRoomFor(colorWheel.transform, m_Camera.transform);
         }
 
         void OpenShoppingList()
@@ -521,6 +723,8 @@ namespace PaletteRoom
             paletteDock.gameObject.SetActive(false);
             colorWheel.gameObject.SetActive(false);
             shoppingList.Open();
+            PanelSpace.MakeRoomFor(shoppingList.transform, m_Camera.transform);
+            NotifyTutorial(TutorialGoal.OpenShoppingList);
         }
 
         void ShowDock()

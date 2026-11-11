@@ -665,15 +665,21 @@ namespace PaletteRoom
             return false;
         }
 
+        // Seat heights of the scanned settee and swivel lounge chair (a throw rests here, not on the back).
+        const float SetteeSeat = 0.44f, LoungeChairSeat = 0.40f;
+
         static readonly FurnitureKind[] Tabletops =
         {
             FurnitureKind.SideTable, FurnitureKind.Nightstand, FurnitureKind.ConsoleTable, FurnitureKind.Dresser,
             FurnitureKind.Desk, FurnitureKind.CoffeeTable, FurnitureKind.MediaConsole, FurnitureKind.DiningTable,
+            FurnitureKind.InlayCoffeeTable, FurnitureKind.RoundCoffeeTable, FurnitureKind.CarvedNightstand,
+            FurnitureKind.CarvedConsole, FurnitureKind.ApothecaryChest, FurnitureKind.SlattedMediaUnit, FurnitureKind.PedestalTable,
         };
 
         static readonly FurnitureKind[] Seats =
         {
             FurnitureKind.Sofa, FurnitureKind.Armchair, FurnitureKind.Bench, FurnitureKind.Ottoman,
+            FurnitureKind.Settee, FurnitureKind.LoungeChair, FurnitureKind.LeatherOttoman,
         };
 
         /// <summary>
@@ -714,6 +720,8 @@ namespace PaletteRoom
             {
                 case FurnitureKind.Sofa: return FurnitureFactory.SofaSeatTop;
                 case FurnitureKind.Armchair: return 0.42f; // the scanned lounge chair's cushion
+                case FurnitureKind.Settee: return SetteeSeat;
+                case FurnitureKind.LoungeChair: return LoungeChairSeat;
                 default: return box.max.y;
             }
         }

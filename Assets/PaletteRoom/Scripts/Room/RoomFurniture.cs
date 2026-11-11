@@ -73,6 +73,27 @@ namespace PaletteRoom
         /// <summary>The user has moved or added something: their arrangement is no longer re-laid automatically.</summary>
         public void MarkEdited() => m_Pristine = false;
 
+        /// <summary>
+        /// Resizes <paramref name="item"/> within its real-world range. A floor piece that would grow into
+        /// another piece, a wall or real furniture keeps its size; returns false then (or at the range's end).
+        /// </summary>
+        public bool TryResize(FurnitureItem item, float size, out string blocker)
+        {
+            blocker = null;
+            float before = item.Size;
+            if (Mathf.Approximately(item.SetSize(size), before))
+                return false;
+            blocker = WhatBlocks(item, item.transform.position, item.transform.rotation);
+            if (blocker != null)
+            {
+                item.SetSize(before);
+                return false;
+            }
+            MarkEdited();
+            Changed?.Invoke();
+            return true;
+        }
+
         void OnRoomScanChanged()
         {
             if (!m_Pristine || m_LayoutHead == null || m_Root == null || m_Relayouts >= MaxRelayouts)
@@ -157,7 +178,7 @@ namespace PaletteRoom
             }
             item.transform.SetPositionAndRotation(spot, rotation);
             m_Items.Add(item);
-            if ((kind == FurnitureKind.WallArt || kind == FurnitureKind.WallShelf) && !TryHangOnWall(item, head, floorY))
+            if (item.Mount == FurnitureMount.Wall && !TryHangOnWall(item, head, floorY))
                 Debug.Log($"[PaletteRoom] No scanned wall nearby for the {item.DisplayName.ToLowerInvariant()}; it floats in front of the user.");
             if (item.Mount == FurnitureMount.Free && kind != FurnitureKind.ThrowPillow && !TryPlaceAccessory(item, head))
                 Debug.Log($"[PaletteRoom] Nothing to set the {item.DisplayName.ToLowerInvariant()} on yet; it's on the floor in front of the user.");
@@ -337,6 +358,8 @@ namespace PaletteRoom
                 if (!Enum.TryParse(piece.kind, out FurnitureKind kind))
                     continue;
                 var item = Factory.Create(kind, FurnitureCatalog.Get(kind).Variant(piece.variant), root);
+                if (piece.size > 0f)
+                    item.SetSize(piece.size);
                 var position = centre + frame * piece.offset;
                 position.y = floorY + piece.offset.y;
                 var rotation = frame * Quaternion.Euler(piece.euler);
@@ -430,9 +453,18 @@ namespace PaletteRoom
                 StartCoroutine(DropRoutine(items));
         }
 
+        // A new piece pops into being a little above its spot (swelling past full size), drops, lands
+        // with a squash and a wobble, and sends a ring of the palette's accent color out across the
+        // floor. Sounds: a pop as it appears and a soft thud where it lands.
+        const float PopEnd = 0.22f, LandAt = 0.55f;
+
         IEnumerator DropRoutine(List<FurnitureItem> items)
         {
+            float duration = Mathf.Max(dropDuration, 0.9f);
             var rests = new Vector3[items.Count];
+            var landed = new bool[items.Count];
+            var popped = new bool[items.Count];
+            float volume = items.Count > 3 ? 0.55f : 1f;
             for (int i = 0; i < items.Count; i++)
             {
                 rests[i] = items[i].transform.localPosition;
@@ -440,11 +472,25 @@ namespace PaletteRoom
                 items[i].transform.localScale = Vector3.zero;
             }
 
-            float total = dropDuration + dropStagger * (items.Count - 1);
+            float total = duration + dropStagger * (items.Count - 1);
             for (float t = 0f; t <= total; t += Time.deltaTime)
             {
                 for (int i = 0; i < items.Count; i++)
-                    Pose(items[i], (t - i * dropStagger) / dropDuration, rests[i]);
+                {
+                    float k = (t - i * dropStagger) / duration;
+                    if (k >= 0f && !popped[i] && items[i] != null)
+                    {
+                        popped[i] = true;
+                        Sfx.PlayAt(SfxKind.Pop, items[i].transform.position, volume, UnityEngine.Random.Range(0.92f, 1.1f));
+                    }
+                    if (k >= LandAt && !landed[i] && items[i] != null)
+                    {
+                        landed[i] = true;
+                        Sfx.PlayAt(SfxKind.Drop, items[i].transform.position, volume, UnityEngine.Random.Range(0.9f, 1.08f));
+                        SpawnRing.Play(items[i]);
+                    }
+                    Pose(items[i], k, rests[i]);
+                }
                 yield return null;
             }
             for (int i = 0; i < items.Count; i++)
@@ -456,11 +502,94 @@ namespace PaletteRoom
             if (item == null)
                 return;
             k = Mathf.Clamp01(k);
-            float fall = 1f - (1f - k) * (1f - k); // ease-out
-            float settle = 1f + Mathf.Sin(k * Mathf.PI) * 0.04f;
             var tr = item.transform;
-            tr.localPosition = rest + Vector3.up * dropHeight * (1f - fall);
-            tr.localScale = Vector3.one * Mathf.Min(1f, k * 3f) * settle;
+            if (k < LandAt)
+            {
+                // Pop: an elastic swell to 115% then back to 100%, hovering; then a gravity fall.
+                float p = Mathf.Clamp01(k / PopEnd);
+                float swell = p < 1f ? Mathf.Sin(p * Mathf.PI * 0.5f) * (1f + 0.15f * Mathf.Sin(p * Mathf.PI)) : 1f;
+                float f = Mathf.Clamp01((k - PopEnd) / (LandAt - PopEnd));
+                tr.localPosition = rest + Vector3.up * dropHeight * (1f - f * f);
+                // Stretched a touch while falling fast.
+                float stretch = 1f + 0.08f * f * f;
+                tr.localScale = new Vector3(swell / Mathf.Sqrt(stretch), swell * stretch, swell / Mathf.Sqrt(stretch));
+                return;
+            }
+            // Landed: a damped squash-and-stretch wobble, volume kept roughly constant.
+            float s = (k - LandAt) / (1f - LandAt);
+            float squash = 1f - 0.16f * Mathf.Exp(-5f * s) * Mathf.Cos(s * Mathf.PI * 3.2f);
+            if (k >= 1f)
+                squash = 1f;
+            float wide = 1f / Mathf.Sqrt(squash);
+            tr.localPosition = rest;
+            tr.localScale = new Vector3(wide, squash, wide);
+        }
+    }
+
+    /// <summary>A ring of the palette's accent color that spreads across the floor and fades as a piece lands.</summary>
+    class SpawnRing : MonoBehaviour
+    {
+        const int Points = 48;
+        const float Seconds = 0.7f;
+
+        static Material s_Material;
+
+        LineRenderer m_Line;
+        float m_From, m_To, m_Start;
+        Color m_Color;
+
+        public static void Play(FurnitureItem item)
+        {
+            if (item == null)
+                return;
+            var bounds = new Bounds(item.transform.position, Vector3.zero);
+            foreach (var r in item.GetComponentsInChildren<Renderer>())
+                bounds.Encapsulate(r.bounds);
+            float radius = Mathf.Max(0.12f, Mathf.Max(bounds.extents.x, bounds.extents.z));
+            var go = new GameObject("Landing Ring");
+            go.transform.position = new Vector3(bounds.center.x, item.transform.position.y + 0.005f, bounds.center.z);
+            var ring = go.AddComponent<SpawnRing>();
+            ring.m_From = radius * 0.8f;
+            ring.m_To = radius * 1.6f + 0.2f;
+            ring.m_Color = PaletteManager.Instance != null ? PaletteManager.Instance.Current.Get(PaletteSlot.Accent) : Color.white;
+            ring.m_Start = Time.time;
+        }
+
+        void Start()
+        {
+            // The UI shader is always in the build and takes vertex colors.
+            s_Material ??= new Material(Canvas.GetDefaultCanvasMaterial()) { name = "Landing Ring" };
+            m_Line = gameObject.AddComponent<LineRenderer>();
+            m_Line.sharedMaterial = s_Material;
+            m_Line.loop = true;
+            m_Line.useWorldSpace = false;
+            m_Line.positionCount = Points;
+            m_Line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            m_Line.receiveShadows = false;
+            m_Line.alignment = LineAlignment.TransformZ;
+            transform.rotation = Quaternion.Euler(90f, 0f, 0f); // lying flat, facing up
+            Update();
+        }
+
+        void Update()
+        {
+            float t = (Time.time - m_Start) / Seconds;
+            if (t >= 1f)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            float ease = 1f - (1f - t) * (1f - t) * (1f - t);
+            float r = Mathf.Lerp(m_From, m_To, ease);
+            for (int i = 0; i < Points; i++)
+            {
+                float a = i * Mathf.PI * 2f / Points;
+                m_Line.SetPosition(i, new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 0f));
+            }
+            var c = m_Color;
+            c.a = 0.85f * (1f - t);
+            m_Line.startColor = m_Line.endColor = c;
+            m_Line.widthMultiplier = Mathf.Lerp(0.03f, 0.008f, t);
         }
     }
 }

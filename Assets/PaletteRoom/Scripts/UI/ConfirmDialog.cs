@@ -23,7 +23,7 @@ namespace PaletteRoom
         {
             m_Head = eventCamera.transform;
             var canvas = UIKit.CreateWorldCanvas("Confirm Canvas", new Vector2(W, H), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 18f);
+            var panel = UIKit.Window(canvas.transform, 18f, modal: true);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -43,9 +43,9 @@ namespace PaletteRoom
 
         public void Show(string title, string body, string confirmText, Action onConfirm)
         {
-            m_Title.text = title;
-            m_Body.text = body;
-            m_ConfirmLabel.text = confirmText;
+            m_Title.Localize(title);
+            m_Body.Localize(body);
+            m_ConfirmLabel.Localize(confirmText);
             m_OnConfirm = onConfirm;
             gameObject.SetActive(true);
             UIKit.PlaceInFront(transform, m_Head, distance, belowEyes);

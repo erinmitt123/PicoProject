@@ -27,6 +27,7 @@ namespace PaletteRoom
             public Vector3 offset;   // from the design's centre, in its frame (+Z = toward the viewer)
             public float yaw;        // relative to the design's frame
             public Vector3 euler;    // full local rotation, for tilted pieces such as pillows
+            public float size;       // the user's resize (0 in rooms saved before resizing existed = as sold)
             public List<ZonePick> picks = new List<ZonePick>();
             public List<PartColor> colors = new List<PartColor>(); // what each part looked like when saved
         }
@@ -155,6 +156,7 @@ namespace PaletteRoom
                     offset = inverse * (item.transform.position - centre),
                     yaw = local.eulerAngles.y,
                     euler = local.eulerAngles,
+                    size = item.Size,
                 };
                 foreach (var zone in item.Zones)
                 {

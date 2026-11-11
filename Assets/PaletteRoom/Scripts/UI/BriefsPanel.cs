@@ -24,7 +24,7 @@ namespace PaletteRoom
             float listH = 3.3f * (CardH + Gap);
             float height = Pad + HeaderH + 18f + listH + Gap + ButtonH + Pad;
             var canvas = UIKit.CreateWorldCanvas("Briefs Canvas", new Vector2(W, height), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 16f);
+            var panel = UIKit.Window(canvas.transform, 16f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -50,17 +50,29 @@ namespace PaletteRoom
             float cardW = W - 2 * Pad - 16f;
             var card = UIKit.Panel(list, brief.title, new Color(1f, 1f, 1f, 0.7f), 10f);
             var c = card.transform;
-            var title = UIKit.Label(c, "Title", $"Level {level} · {brief.title}", 13f, UIKit.TextColor, style: FontStyles.Bold);
+            var title = UIKit.Label(c, "Title", string.Empty, 13f, UIKit.TextColor, style: FontStyles.Bold);
+            title.Localize("Level {0} · {1}", level, Loc.Arg(brief.title));
             UIKit.Place(title.rectTransform, 10f, 8f, cardW - 110f, 18f);
             var stars = UIKit.StarRow(c, cardW - 70f, 8f, 18f);
             var pitch = UIKit.Label(c, "Pitch", brief.pitch, 9.5f, UIKit.MutedTextColor);
             UIKit.Place(pitch.rectTransform, 10f, 28f, cardW - 110f, 26f);
 
-            var needs = new List<string>();
-            foreach (var (kind, count) in brief.mustHave)
-                needs.Add(count > 1 ? $"{count} {FurnitureCatalog.Get(kind).displayName.ToLowerInvariant()}s" : FurnitureCatalog.Get(kind).displayName.ToLowerInvariant());
-            var goal = UIKit.Label(c, "Goal", $"Needs {string.Join(", ", needs)} · {brief.paletteGoal.ToLowerInvariant()} · {brief.maxPieces} pieces max",
-                9f, UIKit.TextColor);
+            string Needs()
+            {
+                var needs = new List<string>();
+                foreach (var (kind, count) in brief.mustHave)
+                {
+                    string display = FurnitureCatalog.Get(kind).displayName;
+                    if (Loc.IsEnglish)
+                        needs.Add(count > 1 ? $"{count} {display.ToLowerInvariant()}s" : display.ToLowerInvariant());
+                    else
+                        needs.Add(count > 1 ? $"{count} × {Loc.T(display)}" : Loc.T(display));
+                }
+                return string.Join(Loc.IsEnglish ? ", " : "、", needs);
+            }
+            var goal = UIKit.Label(c, "Goal", string.Empty, 9f, UIKit.TextColor);
+            goal.Localize("Needs {0} · {1} · {2} pieces max", Loc.Lazy(Needs),
+                Loc.Lazy(() => Loc.IsEnglish ? brief.paletteGoal.ToLowerInvariant() : Loc.T(brief.paletteGoal)), brief.maxPieces);
             UIKit.Place(goal.rectTransform, 10f, 58f, cardW - 110f, 30f);
 
             var start = UIKit.Button(c, "Start", "Start", 11f, true, () => StartRequested?.Invoke(brief));

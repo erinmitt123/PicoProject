@@ -1,11 +1,11 @@
 ﻿<Solution>
   <Project Path="ByteDance.PICO.XR.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="ByteDance.PICO.SptatialUI.csproj" />
   <Project Path="ByteDance.PICO.IconConfigurator.Editor.csproj" />
   <Project Path="ByteDance.PICO.XR.Editor.csproj" />
   <Project Path="ByteDance.PICO.Platform.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.Samples.Hands.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="ByteDance.PICO.Enterprise.csproj" />
   <Project Path="ByteDance.PICO.Platform.Editor.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.Samples.StarterAssets.csproj" />

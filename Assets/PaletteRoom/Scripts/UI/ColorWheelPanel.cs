@@ -63,7 +63,7 @@ namespace PaletteRoom
             m_Head = eventCamera.transform;
 
             var canvas = UIKit.CreateWorldCanvas("Color Wheel Canvas", new Vector2(W, H), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 24f);
+            var panel = UIKit.Window(canvas.transform, 24f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -229,8 +229,8 @@ namespace PaletteRoom
             for (int i = 0; i < m_RowNames.Count; i++)
             {
                 var s = m_Suggestions[i];
-                m_RowNames[i].text = ColorHarmony.DisplayName(s.rule);
-                m_RowNotes[i].text = Note(s);
+                m_RowNames[i].Localize(ColorHarmony.DisplayName(s.rule));
+                ShowNote(m_RowNotes[i], s);
                 for (int k = 0; k < Slots.Length; k++)
                     m_RowSwatches[i][k].color = s.palette.Get(Slots[k]);
                 m_RowRings[i].enabled = i == m_Selected;
@@ -240,20 +240,35 @@ namespace PaletteRoom
             {
                 m_SlotSwatches[k].color = m_Working.Get(Slots[k]);
                 m_SlotRings[k].enabled = k == m_EditSlot;
-                m_SlotLabels[k].text = IsSet(Slots[k]) ? $"{Slots[k]} · set" : Slots[k].ToString();
+                if (IsSet(Slots[k]))
+                    m_SlotLabels[k].Localize("{0} · set", Loc.Arg(Slots[k].ToString()));
+                else
+                    m_SlotLabels[k].Localize(Slots[k].ToString());
                 m_SlotLabels[k].fontStyle = IsSet(Slots[k]) ? FontStyles.Bold : FontStyles.Normal;
             }
 
-            m_Hint.text = m_Set.Count == 0
-                ? $"Picking {Slots[m_EditSlot]}. Tap another swatch to set more colors."
-                : $"Picking {Slots[m_EditSlot]}. Suggestions keep all {m_Set.Count} set color{(m_Set.Count == 1 ? "" : "s")} when they fit.";
+            var editing = Loc.Arg(Slots[m_EditSlot].ToString());
+            if (m_Set.Count == 0)
+                m_Hint.Localize("Picking {0}. Tap another swatch to set more colors.", editing);
+            else if (m_Set.Count == 1)
+                m_Hint.Localize("Picking {0}. Suggestions keep your set color when it fits.", editing);
+            else
+                m_Hint.Localize("Picking {0}. Suggestions keep all {1} set colors when they fit.", editing, m_Set.Count);
         }
 
-        string Note(ColorHarmony.Suggestion s)
+        void ShowNote(TextMeshProUGUI label, ColorHarmony.Suggestion s)
         {
             if (s.replaced.Count > 0)
-                return "Replaces " + string.Join(", ", s.replaced);
-            return m_Set.Count > 1 ? "Keeps your colors" : string.Empty;
+            {
+                var names = new List<string>();
+                foreach (var slot in s.replaced)
+                    names.Add(slot.ToString());
+                label.Localize("Replaces {0}", Loc.Lazy(() => Loc.Join(names)));
+            }
+            else if (m_Set.Count > 1)
+                label.Localize("Keeps your colors");
+            else
+                label.SetPlain(string.Empty);
         }
 
         void BuildWheel(Transform parent)
@@ -321,7 +336,7 @@ namespace PaletteRoom
             float sx = width - 8f - Slots.Length * swatch - (Slots.Length - 1) * gap;
             for (int s = 0; s < Slots.Length; s++)
             {
-                swatches[s] = UIKit.Panel(card.transform, Slots[s].ToString(), Color.white, 5f);
+                swatches[s] = UIKit.Edge(UIKit.Panel(card.transform, Slots[s].ToString(), Color.white, 5f));
                 swatches[s].raycastTarget = false;
                 UIKit.Place(swatches[s].rectTransform, sx + s * (swatch + gap), (RowH - swatch) / 2f, swatch, swatch);
             }
@@ -336,7 +351,7 @@ namespace PaletteRoom
             UIKit.Place(ring.rectTransform, x - 3f, SlotY - 3f, SlotW + 6f, SlotH + 6f);
             m_SlotRings[index] = ring;
 
-            var swatch = UIKit.Panel(parent, Slots[index].ToString(), Color.white, 8f);
+            var swatch = UIKit.Edge(UIKit.Panel(parent, Slots[index].ToString(), Color.white, 8f));
             UIKit.Place(swatch.rectTransform, x, SlotY, SlotW, SlotH);
             var button = swatch.gameObject.AddComponent<Button>();
             button.targetGraphic = swatch;

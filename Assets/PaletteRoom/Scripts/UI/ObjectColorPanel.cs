@@ -42,7 +42,7 @@ namespace PaletteRoom
             m_Palettes = palettes;
             var canvas = UIKit.CreateWorldCanvas("Object Color Canvas", new Vector2(W, 200f), transform, eventCamera);
             m_CanvasRect = (RectTransform)canvas.transform;
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 18f);
+            var panel = UIKit.Window(canvas.transform, 18f);
             UIKit.Stretch(panel.rectTransform);
             m_Body = panel.transform;
 
@@ -59,7 +59,7 @@ namespace PaletteRoom
         {
             m_Item = item;
             var entry = FurnitureCatalog.Get(item.Kind);
-            m_Title.text = $"{entry.displayName} · {entry.Variant(item.VariantId).label}";
+            m_Title.Localize("{0} · {1}", Loc.Arg(entry.displayName), Loc.Arg(entry.Variant(item.VariantId).label));
             RebuildRows();
             gameObject.SetActive(true);
             PlaceBeside(item);
@@ -73,6 +73,9 @@ namespace PaletteRoom
             foreach (var row in m_Rows)
                 Destroy(row.autoRing.transform.parent.gameObject);
             m_Rows.Clear();
+            foreach (var row in m_SizeRows)
+                Destroy(row);
+            m_SizeRows.Clear();
             foreach (Transform child in m_Body)
             {
                 if (child.name == "Footer")
@@ -88,9 +91,30 @@ namespace PaletteRoom
                 y += RowH + RowGap;
             }
 
+            // Size: steps of 5% within what the real piece comes in, with its dimensions in centimetres.
+            BuildSizeRow(y + 4f);
+            y += 4f + RowH + RowGap;
+
+            // The radio is where the music plays from: it can be switched off here.
+            if (m_Item.Kind == FurnitureKind.Radio && AmbientMusic.Instance != null)
+                y += 4f + 34f + RowGap;
+
             var footer = new GameObject("Footer", typeof(RectTransform)).GetComponent<RectTransform>();
             footer.SetParent(m_Body, false);
             UIKit.Place(footer, Pad, y + 4f, W - 2 * Pad, 34f);
+            if (m_Item.Kind == FurnitureKind.Radio && AmbientMusic.Instance != null)
+            {
+                var music = AmbientMusic.Instance;
+                TextMeshProUGUI musicLabel = null;
+                var toggle = UIKit.Button(footer, "Music", string.Empty, 11f, false, () =>
+                {
+                    music.SetRadioOn(!music.RadioOn);
+                    musicLabel.Localize(music.RadioOn ? "Turn the music off" : "Turn the music on");
+                });
+                musicLabel = toggle.GetComponentInChildren<TextMeshProUGUI>();
+                musicLabel.Localize(music.RadioOn ? "Turn the music off" : "Turn the music on");
+                UIKit.Place((RectTransform)toggle.transform, 0f, -(34f + RowGap), W - 2 * Pad, 34f); // just above the footer
+            }
             float half = (W - 2 * Pad - 10f) / 2f;
             var reset = UIKit.Button(footer, "Reset", "Reset to palette", 11f, false, ResetAll);
             UIKit.Place((RectTransform)reset.transform, 0f, 0f, half, 34f);
@@ -104,13 +128,76 @@ namespace PaletteRoom
                 movable.Relayout();
         }
 
+        const float SizeStep = 0.05f;
+        TextMeshProUGUI m_SizeValue;
+        Button m_Smaller, m_Larger;
+
+        void BuildSizeRow(float y)
+        {
+            var row = new GameObject("Size", typeof(RectTransform)).GetComponent<RectTransform>();
+            row.SetParent(m_Body, false);
+            UIKit.Place(row, Pad, y, W - 2 * Pad, RowH);
+            m_SizeRows.Add(row.gameObject);
+
+            var icon = UIKit.Label(row, "Icon", Icons.Size, 17f, UIKit.TextColor, TextAlignmentOptions.MidlineLeft);
+            UIKit.Place(icon.rectTransform, 0f, 0f, 22f, RowH);
+            var name = UIKit.Label(row, "Name", "Size", 12f, UIKit.TextColor, TextAlignmentOptions.MidlineLeft, FontStyles.Bold);
+            UIKit.Place(name.rectTransform, 24f, 0f, NameW - 24f, RowH);
+
+            const float step = 40f;
+            float x = NameW;
+            float valueW = W - 2 * Pad - NameW - 2 * step - 2 * SwatchGap;
+            m_Smaller = UIKit.Button(row, "Smaller", Icons.Remove, 16f, false, () => Resize(-SizeStep));
+            UIKit.Place((RectTransform)m_Smaller.transform, x, 0f, step, RowH);
+            m_SizeValue = UIKit.Label(row, "Value", string.Empty, 10.5f, UIKit.TextColor, TextAlignmentOptions.Center);
+            m_SizeValue.textWrappingMode = TextWrappingModes.NoWrap;
+            UIKit.Place(m_SizeValue.rectTransform, x + step + SwatchGap, 0f, valueW, RowH);
+            m_Larger = UIKit.Button(row, "Larger", Icons.Add, 16f, false, () => Resize(SizeStep));
+            UIKit.Place((RectTransform)m_Larger.transform, x + step + SwatchGap + valueW + SwatchGap, 0f, step, RowH);
+            RefreshSize();
+        }
+
+        readonly List<GameObject> m_SizeRows = new List<GameObject>();
+
+        void Resize(float delta)
+        {
+            var room = m_Item.GetComponentInParent<RoomFurniture>();
+            // Rounded to the step, so repeated presses land on 95%, 100%, 105%… exactly.
+            float target = Mathf.Round((m_Item.Size + delta) / SizeStep) * SizeStep;
+            bool resized = room != null ? room.TryResize(m_Item, target, out var blocker) : !Mathf.Approximately(m_Item.SetSize(target), m_Item.Size);
+            if (!resized)
+                Sfx.Play(SfxKind.Error);
+            RefreshSize();
+        }
+
+        void RefreshSize()
+        {
+            if (m_SizeValue == null || m_Item == null)
+                return;
+            var d = m_Item.Dimensions * 100f;
+            int percent = Mathf.RoundToInt(m_Item.Size * 100f);
+            m_SizeValue.Localize("{0} × {1} × {2} cm · {3}%", Mathf.RoundToInt(d.x), Mathf.RoundToInt(d.z), Mathf.RoundToInt(d.y), percent);
+            var (min, max) = FurnitureCatalog.SizeRange(m_Item.Kind);
+            m_Smaller.interactable = m_Item.Size > min + 0.001f;
+            m_Larger.interactable = m_Item.Size < max - 0.001f;
+        }
+
         void BuildRow(PaintableZone zone, float y)
         {
             var rowRoot = new GameObject(zone.ZoneName, typeof(RectTransform)).GetComponent<RectTransform>();
             rowRoot.SetParent(m_Body, false);
             UIKit.Place(rowRoot, Pad, y, W - 2 * Pad, RowH);
 
-            var name = UIKit.Label(rowRoot, "Name", zone.ZoneName, 12f, UIKit.TextColor, TextAlignmentOptions.MidlineLeft, FontStyles.Bold);
+            var name = UIKit.Label(rowRoot, "Name", string.Empty, 12f, UIKit.TextColor, TextAlignmentOptions.MidlineLeft, FontStyles.Bold);
+            // Part names can clash with button words ("Back"), so a "part:" entry wins when there is one.
+            string zoneName = zone.ZoneName;
+            name.Localize("{0}", Loc.Lazy(() =>
+            {
+                if (Loc.IsEnglish)
+                    return zoneName;
+                string key = "part:" + zoneName;
+                return Strings.Zh.TryGetValue(key, out var part) ? part : Loc.T(zoneName);
+            }));
             UIKit.Place(name.rectTransform, 0f, 0f, NameW, RowH);
 
             var row = new Row { zone = zone, swatches = new Image[Slots.Length], rings = new Image[Slots.Length] };
@@ -135,6 +222,8 @@ namespace PaletteRoom
 
             var face = UIKit.Panel(parent, name, slot.HasValue ? Color.white : UIKit.SecondaryColor, 7f);
             UIKit.Place(face.rectTransform, x, 0f, width, RowH);
+            if (slot.HasValue)
+                UIKit.Edge(face);
             var button = face.gameObject.AddComponent<Button>();
             button.targetGraphic = face;
             button.transition = slot.HasValue ? Selectable.Transition.None : Selectable.Transition.ColorTint;

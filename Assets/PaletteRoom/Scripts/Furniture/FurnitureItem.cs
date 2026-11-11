@@ -85,6 +85,62 @@ namespace PaletteRoom
             return false;
         }
 
+        float m_Size = 1f;
+
+        /// <summary>The user's resize of this piece, relative to its catalog size (1 = as sold).</summary>
+        public float Size => m_Size;
+
+        /// <summary>
+        /// Resizes the piece uniformly to <paramref name="size"/> × its catalog size, clamped to what the
+        /// real thing comes in (<see cref="FurnitureCatalog.SizeRange"/>). The model and the floor
+        /// outline (box colliders) scale together; the root's own scale is left to the drop-in animation.
+        /// </summary>
+        public float SetSize(float size)
+        {
+            var (min, max) = FurnitureCatalog.SizeRange(kind);
+            size = Mathf.Clamp(size, min, max);
+            float ratio = size / m_Size;
+            if (Mathf.Approximately(ratio, 1f))
+                return m_Size;
+            m_Size = size;
+            foreach (Transform child in transform)
+            {
+                child.localPosition *= ratio;
+                child.localScale *= ratio;
+            }
+            foreach (var box in GetComponents<BoxCollider>())
+            {
+                box.center *= ratio;
+                box.size *= ratio;
+            }
+            return m_Size;
+        }
+
+        /// <summary>Overall width × height × depth in metres, from the floor outline and model.</summary>
+        public Vector3 Dimensions
+        {
+            get
+            {
+                var renderers = GetComponentsInChildren<Renderer>();
+                if (renderers.Length == 0)
+                    return Vector3.zero;
+                var toLocal = transform.worldToLocalMatrix;
+                var b = new Bounds(toLocal.MultiplyPoint3x4(renderers[0].bounds.center), Vector3.zero);
+                foreach (var r in renderers)
+                {
+                    var rb = r.localBounds;
+                    var m = toLocal * r.transform.localToWorldMatrix;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var corner = rb.center + Vector3.Scale(rb.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                        b.Encapsulate(m.MultiplyPoint3x4(corner));
+                    }
+                }
+                // In the piece's own frame, so the root's drop-in scale doesn't count.
+                return b.size;
+            }
+        }
+
         public void Configure(FurnitureKind kind, string variantId, string itemId, string displayName, FurnitureRole role, FurnitureMount mount)
         {
             this.kind = kind;

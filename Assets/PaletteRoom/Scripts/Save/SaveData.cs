@@ -8,7 +8,8 @@ namespace PaletteRoom
     /// <summary>
     /// What carries over from one session to the next, kept on the headset as JSON in the app's
     /// persistent data folder: the palettes the user made, the color wheel's set colors, the palette in
-    /// use, the room they were last working on, and whether they've been offered the tutorial.
+    /// use, the room they were last working on, whether they've been offered the tutorial, and the sound
+    /// levels from the settings.
     /// Revealed rooms are kept separately, in the <see cref="Lookbook"/>.
     /// </summary>
     public static class SaveData
@@ -38,6 +39,13 @@ namespace PaletteRoom
             public bool hasLastRoom;
             public Lookbook.Entry lastRoom = new Lookbook.Entry();
             public bool tutorialSeen;
+            // Older save files have no sound levels; audioSaved tells those apart from levels set to 0.
+            public bool audioSaved;
+            public float masterVolume, musicVolume, effectsVolume;
+            public bool voiceSaved;
+            public float voiceVolume;
+            public string language; // "en", "zh", or empty for the headset's language
+            public bool handRays;   // the user turned eye-gaze input off
         }
 
         static readonly PaletteSlot[] Slots = (PaletteSlot[])Enum.GetValues(typeof(PaletteSlot));
@@ -149,6 +157,74 @@ namespace PaletteRoom
             store.lastRoom = entry;
             store.hasLastRoom = entry != null;
             Write();
+        }
+
+        // ---- sound --------------------------------------------------------------------------
+
+        /// <summary>The sound levels from the settings, or false if the user hasn't changed them yet.</summary>
+        public static bool GetAudioLevels(out float master, out float music, out float effects)
+        {
+            var store = Load();
+            master = store.masterVolume;
+            music = store.musicVolume;
+            effects = store.effectsVolume;
+            return store.audioSaved;
+        }
+
+        public static void SaveAudioLevels(float master, float music, float effects)
+        {
+            var store = Load();
+            store.audioSaved = true;
+            store.masterVolume = master;
+            store.musicVolume = music;
+            store.effectsVolume = effects;
+            Write();
+        }
+
+        /// <summary>The tutorial narration level, or false if the user hasn't changed it yet.</summary>
+        public static bool GetVoiceLevel(out float voice)
+        {
+            var store = Load();
+            voice = store.voiceVolume;
+            return store.voiceSaved;
+        }
+
+        public static void SaveVoiceLevel(float voice)
+        {
+            var store = Load();
+            store.voiceSaved = true;
+            store.voiceVolume = voice;
+            Write();
+        }
+
+        // ---- language ------------------------------------------------------------------------
+
+        /// <summary>"en" or "zh" once the user has chosen; empty until then.</summary>
+        public static string LanguageCode
+        {
+            get => Load().language;
+            set
+            {
+                if (Load().language == value)
+                    return;
+                s_Store.language = value;
+                Write();
+            }
+        }
+
+        // ---- input ---------------------------------------------------------------------------
+
+        /// <summary>Look and pinch (on headsets with eye tracking); false = the hands' own rays.</summary>
+        public static bool GazeInput
+        {
+            get => !Load().handRays;
+            set
+            {
+                if (Load().handRays == !value)
+                    return;
+                s_Store.handRays = !value;
+                Write();
+            }
         }
 
         // ---- tutorial ------------------------------------------------------------------------

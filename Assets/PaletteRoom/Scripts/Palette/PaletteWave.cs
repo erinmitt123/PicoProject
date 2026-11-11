@@ -195,7 +195,7 @@ namespace PaletteRoom
             // Climb the scale as the wave travels; long waves use the whole two octaves.
             int step = count <= 1 ? 0 : Mathf.RoundToInt(index / (float)(count - 1) * (Scale.Length - 1));
             voice.pitch = Mathf.Pow(2f, Scale[Mathf.Clamp(step, 0, Scale.Length - 1)] / 12f);
-            voice.volume = 0.55f;
+            voice.volume = 0.55f * AudioLevels.EffectsGain;
             voice.PlayOneShot(m_Chime);
         }
 

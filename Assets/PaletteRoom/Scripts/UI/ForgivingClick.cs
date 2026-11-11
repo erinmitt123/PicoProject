@@ -20,7 +20,8 @@ namespace PaletteRoom
     public class ForgivingClick : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerEnterHandler, IPointerExitHandler
     {
         const float MaxClickSeconds = 0.6f;
-        const float HoverScale = 1.08f;
+        const float HoverScale = 1.08f, TintedHoverScale = 1.03f, PressScale = 0.94f;
+        const float Spring = 18f;
         // The input module runs in Update, so a release still unanswered after this many LateUpdates was dropped.
         const int LostReleaseFrames = 2;
 
@@ -32,11 +33,14 @@ namespace PaletteRoom
         PointerEventData m_Press;
         NearFarInteractor m_PressedBy;
         int m_ReleasedFrames;
+        bool m_Hovered, m_Down;
 
         void Awake()
         {
             m_Button = GetComponent<Button>();
             m_RestScale = transform.localScale;
+            // Every press is heard, whichever path (uGUI, this forgiving release, a lost release) clicks it.
+            m_Button.onClick.AddListener(() => Sfx.Play(SfxKind.Click));
         }
 
         public void OnPointerDown(PointerEventData eventData)
@@ -49,11 +53,13 @@ namespace PaletteRoom
             m_PressedBy = (eventData as TrackedDeviceEventData)?.interactor as NearFarInteractor;
             m_ReleasedFrames = 0;
             s_Held = this;
+            m_Down = m_Button.IsInteractable();
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
             ClearHeld();
+            m_Down = false;
             bool quick = Time.unscaledTime - m_PressedAt <= MaxClickSeconds;
             m_PressedAt = float.NegativeInfinity;
             if (!quick || eventData.dragging || !m_Button.IsInteractable())
@@ -68,6 +74,7 @@ namespace PaletteRoom
 
         void LateUpdate()
         {
+            Animate();
             if (m_PressedBy == null)
                 return;
             if (m_PressedBy.uiPressInput.ReadIsPerformed())
@@ -88,6 +95,7 @@ namespace PaletteRoom
         {
             var press = m_Press;
             ClearHeld();
+            m_Down = false;
             m_PressedAt = float.NegativeInfinity;
             if (press != null)
                 m_Button.OnPointerUp(press);
@@ -103,15 +111,38 @@ namespace PaletteRoom
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-            if (m_Button.transition == Selectable.Transition.None && m_Button.IsInteractable())
-                transform.localScale = m_RestScale * HoverScale;
+            m_Hovered = true;
+            if (m_Button.IsInteractable())
+                Sfx.Play(SfxKind.Hover);
         }
 
-        public void OnPointerExit(PointerEventData eventData) => transform.localScale = m_RestScale;
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            m_Hovered = false;
+            m_Down = false;
+        }
+
+        // Lifts a little under the pointer and squishes while pinched, springing back on release.
+        void Animate()
+        {
+            float target = 1f;
+            if (m_Button.IsInteractable())
+            {
+                if (m_Down)
+                    target = PressScale;
+                else if (m_Hovered)
+                    target = m_Button.transition == Selectable.Transition.None ? HoverScale : TintedHoverScale;
+            }
+            var want = m_RestScale * target;
+            if ((transform.localScale - want).sqrMagnitude < 1e-8f)
+                return;
+            transform.localScale = Vector3.Lerp(transform.localScale, want, 1f - Mathf.Exp(-Spring * Time.unscaledDeltaTime));
+        }
 
         void OnDisable()
         {
             ClearHeld();
+            m_Hovered = m_Down = false;
             transform.localScale = m_RestScale;
         }
     }

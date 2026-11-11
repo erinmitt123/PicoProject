@@ -34,6 +34,23 @@ namespace PaletteRoom
         Vase,
         ThrowBlanket,
         WallShelf,
+        Radio,
+        // Scanned pieces from Poly Haven (prefabs built by FurnitureAssetBuilder).
+        Settee,
+        LoungeChair,
+        LeatherOttoman,
+        InlayCoffeeTable,
+        RoundCoffeeTable,
+        CarvedNightstand,
+        CarvedConsole,
+        ApothecaryChest,
+        SlattedMediaUnit,
+        CubeShelves,
+        TuftedDiningChair,
+        PedestalTable,
+        ArchedMirror,
+        CeramicVase,
+        Succulent, // new kinds go at the end: saved rooms store the number
     }
 
     /// <summary>
@@ -104,8 +121,13 @@ namespace PaletteRoom
                 case FurnitureKind.TableLamp:
                 case FurnitureKind.Vase:
                 case FurnitureKind.ThrowBlanket:
+                case FurnitureKind.Radio:
+                case FurnitureKind.CeramicVase:
+                case FurnitureKind.Succulent:
                     return FurnitureMount.Free; // accessories sit on other pieces
-                case FurnitureKind.WallShelf: return FurnitureMount.Wall;
+                case FurnitureKind.WallShelf:
+                case FurnitureKind.ArchedMirror:
+                    return FurnitureMount.Wall;
                 default: return FurnitureMount.Floor;
             }
         }

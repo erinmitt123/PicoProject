@@ -27,7 +27,7 @@ namespace PaletteRoom
             public GameObject root;
             public Image dot;
             public TextMeshProUGUI count;
-            public Button remove;
+            public Button remove, add;
         }
 
         readonly List<Tile> m_Tiles = new List<Tile>();
@@ -37,6 +37,11 @@ namespace PaletteRoom
         Transform m_Head;
         RectTransform m_Grid;
         TextMeshProUGUI m_Summary;
+        Button m_Close;
+        string m_Filter = AllCategory;
+
+        /// <summary>The Close button (for the tutorial to point at).</summary>
+        public RectTransform CloseButton => m_Close != null ? (RectTransform)m_Close.transform : null;
 
         public event Action<FurnitureKind, string> AddRequested;
 
@@ -68,7 +73,7 @@ namespace PaletteRoom
             float height = summaryY + 18f + Gap + FooterH + Pad;
 
             var canvas = UIKit.CreateWorldCanvas("Shopping List Canvas", new Vector2(width, height), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 24f);
+            var panel = UIKit.Window(canvas.transform, 24f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -95,7 +100,7 @@ namespace PaletteRoom
             m_Summary = UIKit.Label(p, "Summary", string.Empty, 10.5f, UIKit.MutedTextColor, TextAlignmentOptions.Center);
             UIKit.Place(m_Summary.rectTransform, Pad, summaryY, width - 2 * Pad, 18f);
 
-            var close = UIKit.Button(p, "Close", "Close", 14f, false, Close);
+            var close = m_Close = UIKit.Button(p, "Close", "Close", 14f, false, Close);
             UIKit.Place((RectTransform)close.transform, Pad, height - Pad - FooterH + 6f, width - 2 * Pad, FooterH - 6f);
 
             m_Palettes.PaletteChanged += _ => Refresh();
@@ -116,8 +121,28 @@ namespace PaletteRoom
             Closed?.Invoke();
         }
 
+        /// <summary>
+        /// Shows <paramref name="kind"/>'s category, and returns the + button of its usual size (for the tutorial
+        /// to point at), or null when the list is closed.
+        /// </summary>
+        public RectTransform FocusOn(FurnitureKind kind)
+        {
+            if (!isActiveAndEnabled)
+                return null;
+            var entry = FurnitureCatalog.Get(kind);
+            if (m_Filter != entry.category)
+                ApplyFilter(entry.category);
+            foreach (var tile in m_Tiles)
+            {
+                if (tile.entry.kind == kind && tile.variant.id == entry.Default.id)
+                    return (RectTransform)tile.add.transform;
+            }
+            return null;
+        }
+
         void ApplyFilter(string category)
         {
+            m_Filter = category;
             int shown = 0;
             foreach (var tile in m_Tiles)
             {
@@ -128,7 +153,7 @@ namespace PaletteRoom
             }
             foreach (var (c, chip) in m_Chips)
                 UIKit.SetChipSelected(chip, c == category);
-            m_Summary.text = $"{shown} item{(shown == 1 ? "" : "s")}";
+            m_Summary.Localize(shown == 1 ? "1 item" : "{0} items", shown);
             m_Grid.anchoredPosition = Vector2.zero; // back to the top of the list
             Refresh();
         }
@@ -140,7 +165,7 @@ namespace PaletteRoom
             {
                 tile.dot.color = palette.Get(RoleSlot(tile.entry.role));
                 int n = m_Room.Count(tile.entry.kind, tile.variant.id);
-                tile.count.text = n.ToString();
+                tile.count.SetPlain(n.ToString());
                 tile.remove.interactable = n > 0; // no dead buttons
             }
         }
@@ -184,7 +209,7 @@ namespace PaletteRoom
             UIKit.Place((RectTransform)tile.remove.transform, 6f, TileH - 32f, 28f, 26f);
             tile.count = UIKit.Label(c, "Count", "0", 13f, UIKit.TextColor, TextAlignmentOptions.Center, FontStyles.Bold);
             UIKit.Place(tile.count.rectTransform, 34f, TileH - 32f, TileW - 68f, 26f);
-            var add = UIKit.Button(c, "Add", "+", 16f, true, () => AddRequested?.Invoke(entry.kind, variant.id));
+            var add = tile.add = UIKit.Button(c, "Add", "+", 16f, true, () => AddRequested?.Invoke(entry.kind, variant.id));
             UIKit.Place((RectTransform)add.transform, TileW - 34f, TileH - 32f, 28f, 26f);
 
             m_Tiles.Add(tile);

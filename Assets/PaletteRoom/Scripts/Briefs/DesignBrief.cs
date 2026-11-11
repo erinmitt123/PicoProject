@@ -69,16 +69,26 @@ namespace PaletteRoom
                 counts.TryGetValue(kind, out int have);
                 bool met = have >= count;
                 haveAll &= met;
-                var name = FurnitureCatalog.Get(kind).displayName.ToLowerInvariant();
-                string article = "aeiou".IndexOf(name[0]) >= 0 ? "An" : "A";
-                goals.Add(new Goal { text = count > 1 ? $"{count} × {name} ({Mathf.Min(have, count)}/{count})" : $"{article} {name}", met = met });
+                string display = FurnitureCatalog.Get(kind).displayName;
+                string text;
+                if (Loc.IsEnglish)
+                {
+                    var name = display.ToLowerInvariant();
+                    string article = "aeiou".IndexOf(name[0]) >= 0 ? "An" : "A";
+                    text = count > 1 ? $"{count} × {name} ({Mathf.Min(have, count)}/{count})" : $"{article} {name}";
+                }
+                else
+                {
+                    text = count > 1 ? $"{count} × {Loc.T(display)} ({Mathf.Min(have, count)}/{count})" : Loc.F("A {0}", Loc.T(display));
+                }
+                goals.Add(new Goal { text = text, met = met });
             }
             bool paletteOk = palette != null && m_PaletteFits(palette);
-            goals.Add(new Goal { text = paletteGoal, met = paletteOk });
+            goals.Add(new Goal { text = Loc.T(paletteGoal), met = paletteOk });
             bool withinLimit = maxPieces <= 0 || pieces <= maxPieces;
             if (maxPieces > 0)
-                goals.Add(new Goal { text = $"{maxPieces} pieces or fewer ({pieces} now)", met = withinLimit });
-            goals.Add(new Goal { text = "Nothing overlapping", met = allPlaced });
+                goals.Add(new Goal { text = Loc.F("{0} pieces or fewer ({1} now)", maxPieces, pieces), met = withinLimit });
+            goals.Add(new Goal { text = Loc.T("Nothing overlapping"), met = allPlaced });
 
             int stars = !haveAll ? 0 : !paletteOk ? 1 : withinLimit && allPlaced ? 3 : 2;
             return new Score { goals = goals.ToArray(), stars = stars, pieces = pieces };

@@ -28,6 +28,21 @@ namespace PaletteRoom.EditorTools
             { "potted_plant_02", (0f, 1f) },
             { "hanging_picture_frame_01", (0f, 1f) }, // true A1 (59.4 × 84.1 cm); smaller prints are size variants
             { "throw_pillows_01", (0f, 1f) },
+            { "Sofa_01", (0f, 1f) },
+            { "mid_century_lounge_chair", (0f, 0.83f) },   // the scan is ~20% oversized
+            { "Ottoman_01", (0f, 1f) },
+            { "modern_coffee_table_01", (0f, 1f) },
+            { "coffee_table_round_01", (0f, 0.75f) },      // 130 cm scan → 98 cm, 37 cm high
+            { "ClassicNightstand_01", (0f, 0.9f) },
+            { "ClassicConsole_01", (0f, 0.82f) },          // to a 78 cm console height
+            { "vintage_wooden_drawer_01", (0f, 0.7f) },    // 172 cm scan → 120 cm; the variant also trims depth
+            { "modern_wooden_cabinet", (0f, 0.74f) },      // 244 cm scan → 180 cm, 50 cm high
+            { "wooden_display_shelves_01", (0f, 1f) },
+            { "dining_chair_02", (0f, 1f) },
+            { "round_wooden_table_01", (0f, 0.75f) },      // to a 75 cm dining height
+            { "ornate_mirror_01", (0f, 1.3f) },            // 63 × 97 cm
+            { "ceramic_vase_01", (0f, 1f) },
+            { "potted_plant_04", (0f, 1f) },
         };
 
         [MenuItem("Palette Room/Rebuild Furniture Assets")]
@@ -43,7 +58,7 @@ namespace PaletteRoom.EditorTools
             var paint = Lit("Satin Lacquer", null, null, Color.white, 0.55f);
             // The scan is a mid-tone oak; lift it toward the pale birch/oak typical of flat-pack furniture.
             var oak = Lit("White Oak", Brightened($"{Textures}/white_oak_veneer_diff_1k.png", 1.4f), Tex($"{Textures}/white_oak_veneer_nor_gl_1k.png"), Color.white, 0.38f, tiling: 1.5f);
-            var metal = Lit("Powder Coat Black", null, null, new Color(0.16f, 0.16f, 0.17f), 0.45f, metallic: 0.6f);
+            var metal = Metal();
             var bulb = Lit("Warm Bulb", null, null, new Color(1f, 0.93f, 0.8f), 0.8f);
             bulb.SetColor("_EmissionColor", new Color(1f, 0.82f, 0.55f) * 2.2f);
             ApplyKeywords(bulb);
@@ -66,6 +81,21 @@ namespace PaletteRoom.EditorTools
                 Entry(FurnitureKind.SideTable, BuildSideTable()),
                 Entry(FurnitureKind.Plant, BuildPlant()),
                 Entry(FurnitureKind.ThrowPillow, BuildPillow()),
+                Entry(FurnitureKind.Settee, BuildSettee()),
+                Entry(FurnitureKind.LoungeChair, BuildLoungeChair()),
+                Entry(FurnitureKind.LeatherOttoman, BuildWhole("Leather Ottoman", "Ottoman_01", "Cover", 0.5f, 0.35f)),
+                Entry(FurnitureKind.InlayCoffeeTable, BuildInlayCoffeeTable()),
+                Entry(FurnitureKind.RoundCoffeeTable, BuildRoundCoffeeTable()),
+                Entry(FurnitureKind.CarvedNightstand, BuildWhole("Carved Nightstand", "ClassicNightstand_01", "Finish", 0.75f, 0.4f)),
+                Entry(FurnitureKind.CarvedConsole, BuildWhole("Carved Console", "ClassicConsole_01", "Finish", 0.75f, 0.4f)),
+                Entry(FurnitureKind.ApothecaryChest, BuildApothecaryChest()),
+                Entry(FurnitureKind.SlattedMediaUnit, BuildSlattedMediaUnit()),
+                Entry(FurnitureKind.CubeShelves, BuildCubeShelves()),
+                Entry(FurnitureKind.TuftedDiningChair, BuildTuftedDiningChair()),
+                Entry(FurnitureKind.PedestalTable, BuildPedestalTable()),
+                Entry(FurnitureKind.ArchedMirror, BuildArchedMirror()),
+                Entry(FurnitureKind.CeramicVase, BuildWhole("Ceramic Vase", "ceramic_vase_01", "Glaze", 0.6f, 0.75f)),
+                Entry(FurnitureKind.Succulent, BuildSucculent()),
             };
             EditorUtility.SetDirty(library);
             AssetDatabase.SaveAssets();
@@ -321,6 +351,285 @@ namespace PaletteRoom.EditorTools
             Zone(root, "Cover", ZoneColorSource.ItemRole, new PaintableZone.Target(keep));
             return Save(root, "Throw Pillow");
         }
+
+        // ---- scanned pieces, round two (Poly Haven) -----------------------------------------
+        // Each of these scans is one mesh on one texture atlas. Where a piece has parts that should
+        // behave differently (fabric vs. wood frame, mirror glass vs. gilt frame), SplitByTexture sorts
+        // its triangles into two sub-meshes by what the atlas shows under them.
+
+        /// <summary>A piece painted all over: one tinted material, one zone following the item's role.</summary>
+        static GameObject BuildWhole(string name, string id, string zone, float detail, float smoothness)
+        {
+            var (root, model) = Begin(name, id);
+            var finish = Lit($"{name} Finish", Tint(ModelTex(id, "diff_1k.jpg"), detail), Tex(ModelTex(id, "nor_gl_1k.exr")), Color.white, smoothness);
+            var targets = new List<PaintableZone.Target>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                SetSlot(r, -1, finish);
+                targets.Add(new PaintableZone.Target(r));
+            }
+            Zone(root, zone, ZoneColorSource.ItemRole, targets.ToArray());
+            return Save(root, name);
+        }
+
+        /// <summary>
+        /// Two-part piece on a split mesh: sub-mesh 0 (where <paramref name="painted"/> holds) gets the tinted
+        /// material and follows the item's role; sub-mesh 1 keeps the scan's own texture and stays as it is.
+        /// </summary>
+        static GameObject BuildSplit(string name, string id, System.Func<Color, bool> painted, string paintedZone, float detail,
+            float smoothness, string naturalZone, float naturalSmoothness)
+        {
+            var (root, model) = Begin(name, id);
+            var r = model.GetComponentInChildren<Renderer>();
+            SplitByTexture(id, r, ModelTex(id, "diff_1k.jpg"), painted);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            r.sharedMaterials = new[]
+            {
+                Lit($"{name} {paintedZone}", Tint(ModelTex(id, "diff_1k.jpg"), detail), normal, Color.white, smoothness),
+                Lit($"{name} {naturalZone}", Tex(ModelTex(id, "diff_1k.jpg")), normal, Color.white, naturalSmoothness),
+            };
+            Zone(root, paintedZone, ZoneColorSource.ItemRole, new PaintableZone.Target(r, 0));
+            Zone(root, naturalZone, ZoneColorSource.Fixed, new PaintableZone.Target(r, 1)).SetAllowOverride(false);
+            return Save(root, name);
+        }
+
+        static float Lum(Color c) => 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+
+        static float Sat(Color c)
+        {
+            Color.RGBToHSV(c, out _, out float s, out _);
+            return s;
+        }
+
+        // Pale linen upholstery on a dark carved frame.
+        static GameObject BuildSettee() =>
+            BuildSplit("Settee", "Sofa_01", c => Lum(c) > 0.35f && Sat(c) < 0.3f, "Upholstery", 0.6f, 0.15f, "Frame", 0.45f);
+
+        // Dark leather cushions; the bent-ply shell and the swivel base stay natural.
+        static GameObject BuildLoungeChair() =>
+            BuildSplit("Swivel Lounge Chair", "mid_century_lounge_chair", c => Lum(c) < 0.36f && Sat(c) > 0.3f, "Cushions", 0.5f, 0.35f, "Frame", 0.45f);
+
+        // The grey concrete top takes the color; the oak frame stays oak.
+        static GameObject BuildInlayCoffeeTable() =>
+            BuildSplit("Inlay Coffee Table", "modern_coffee_table_01", c => Sat(c) < 0.3f, "Top", 0.7f, 0.35f, "Frame", 0.4f);
+
+        // The pale stone top takes the color; the black bent-steel legs stay black.
+        static GameObject BuildRoundCoffeeTable() =>
+            BuildSplit("Round Coffee Table", "coffee_table_round_01", c => Lum(c) > 0.45f, "Top", 0.6f, 0.5f, "Legs", 0.5f);
+
+        // Leather seat and back; the near-black legs stay as they are.
+        static GameObject BuildTuftedDiningChair() =>
+            BuildSplit("Tufted Dining Chair", "dining_chair_02", c => Lum(c) > 0.08f, "Upholstery", 0.5f, 0.35f, "Legs", 0.4f);
+
+        static GameObject BuildArchedMirror()
+        {
+            const string id = "ornate_mirror_01";
+            const string name = "Arched Mirror";
+            var (root, model) = Begin(name, id);
+            var r = model.GetComponentInChildren<Renderer>();
+            // The gilt frame is saturated gold; the glass and its backing are neutral grey.
+            SplitByTexture(id, r, ModelTex(id, "diff_1k.jpg"), c => Sat(c) > 0.25f);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            r.sharedMaterials = new[]
+            {
+                Lit($"{name} Frame", Tint(ModelTex(id, "diff_1k.jpg"), 0.7f), normal, Color.white, 0.55f, metallic: 0.3f),
+                Lit("Mirror Glass", null, null, new Color(0.85f, 0.87f, 0.88f), 0.97f, metallic: 1f),
+            };
+            Zone(root, "Frame", ZoneColorSource.ItemRole, new PaintableZone.Target(r, 0));
+            Zone(root, "Glass", ZoneColorSource.Fixed, new PaintableZone.Target(r, 1)).SetAllowOverride(false);
+            // The scan hangs from its centre; stand it on the root like every other piece.
+            var b = r.bounds;
+            model.transform.position -= new Vector3(b.center.x, b.min.y, 0f);
+            return Save(root, name);
+        }
+
+        static GameObject BuildApothecaryChest()
+        {
+            const string id = "vintage_wooden_drawer_01";
+            const string name = "Apothecary Chest";
+            var (root, model) = Begin(name, id);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            var body = Lit($"{name} Body", Tint(ModelTex(id, "diff_1k.jpg"), 0.7f), normal, Color.white, 0.4f);
+            var drawers = Lit($"{name} Drawers", Tex(ModelTex(id, "diff_1k.jpg")), normal, Color.white, 0.45f);
+            var bodyTargets = new List<PaintableZone.Target>();
+            var drawerTargets = new List<PaintableZone.Target>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                bool drawer = r.name.Contains("_drawer");
+                SetSlot(r, -1, drawer ? drawers : body);
+                (drawer ? drawerTargets : bodyTargets).Add(new PaintableZone.Target(r));
+            }
+            // A painted carcass around the original oak-and-brass drawers.
+            Zone(root, "Body", ZoneColorSource.ItemRole, bodyTargets.ToArray());
+            Zone(root, "Drawer Fronts", ZoneColorSource.Fixed, drawerTargets.ToArray()).SetAllowOverride(false);
+            return Save(root, name);
+        }
+
+        static GameObject BuildSlattedMediaUnit()
+        {
+            const string id = "modern_wooden_cabinet";
+            const string name = "Slatted Media Unit";
+            var (root, model) = Begin(name, id);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            var body = Lit($"{name} Body", Tint(ModelTex(id, "diff_1k.jpg"), 0.6f), normal, Color.white, 0.4f);
+            var doors = Lit($"{name} Doors", Tex(ModelTex(id, "diff_1k.jpg")), normal, Color.white, 0.4f);
+            var metal = Metal();
+            var bodyTargets = new List<PaintableZone.Target>();
+            var doorTargets = new List<PaintableZone.Target>();
+            var fittings = new List<PaintableZone.Target>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                if (r.name.Contains("_door"))
+                {
+                    SetSlot(r, -1, doors);
+                    doorTargets.Add(new PaintableZone.Target(r));
+                }
+                else if (r.name.Contains("_path"))
+                {
+                    SetSlot(r, -1, metal); // the sliding-door tracks
+                    fittings.Add(new PaintableZone.Target(r));
+                }
+                else
+                {
+                    SetSlot(r, -1, body);
+                    bodyTargets.Add(new PaintableZone.Target(r));
+                }
+            }
+            // A painted case; the slatted oak doors are the point of the piece, so they stay oak.
+            Zone(root, "Body", ZoneColorSource.ItemRole, bodyTargets.ToArray());
+            Zone(root, "Doors", ZoneColorSource.Fixed, doorTargets.ToArray()).SetAllowOverride(false);
+            if (fittings.Count > 0)
+                Zone(root, "Fittings", ZoneColorSource.Fixed, fittings.ToArray()).SetAllowOverride(false);
+            return Save(root, name);
+        }
+
+        static GameObject BuildCubeShelves()
+        {
+            const string id = "wooden_display_shelves_01";
+            const string name = "Cube Shelves";
+            var (root, model) = Begin(name, id);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            var tinted = Tint(ModelTex(id, "diff_1k.jpg"), 0.65f);
+            var frame = Lit($"{name} Frame", tinted, normal, Color.white, 0.4f);
+            var bins = Lit($"{name} Bins", tinted, normal, Color.white, 0.15f);
+            var frameTargets = new List<PaintableZone.Target>();
+            var binTargets = new List<PaintableZone.Target>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                bool bin = r.name.Contains("_drawer");
+                SetSlot(r, -1, bin ? bins : frame);
+                (bin ? binTargets : frameTargets).Add(new PaintableZone.Target(r));
+            }
+            Zone(root, "Frame", ZoneColorSource.ItemRole, frameTargets.ToArray());
+            // The fabric bins carry the accent, like the cushions on a sofa.
+            Zone(root, "Bins", ZoneColorSource.Slot, PaletteSlot.Accent, binTargets.ToArray());
+            return Save(root, name);
+        }
+
+        static GameObject BuildPedestalTable()
+        {
+            const string id = "round_wooden_table_01";
+            const string name = "Pedestal Table";
+            var (root, model) = Begin(name, id);
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            var finish = Lit($"{name} Finish", Tint(ModelTex(id, "diff_1k.jpg"), 0.7f), normal, Color.white, 0.5f);
+            var targets = new List<PaintableZone.Target>();
+            Renderer bolts = null;
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                if (r.name.EndsWith("_bolts"))
+                {
+                    bolts = r;
+                    continue;
+                }
+                SetSlot(r, -1, finish);
+                targets.Add(new PaintableZone.Target(r));
+            }
+            Zone(root, "Finish", ZoneColorSource.ItemRole, targets.ToArray());
+            if (bolts != null)
+            {
+                SetSlot(bolts, -1, Metal());
+                Zone(root, "Fittings", ZoneColorSource.Fixed, new PaintableZone.Target(bolts)).SetAllowOverride(false);
+            }
+            return Save(root, name);
+        }
+
+        static GameObject BuildSucculent()
+        {
+            const string id = "potted_plant_04";
+            const string name = "Succulent";
+            var (root, model) = Begin(name, id);
+            var tex = ModelTex(id, "diff_1k.jpg");
+            var normal = Tex(ModelTex(id, "nor_gl_1k.exr"));
+            var pot = Lit($"{name} Pot", Tint(tex, 0.6f), normal, Color.white, 0.35f);
+            var natural = Lit($"{name} Plant", Tex(tex), normal, Color.white, 0.25f);
+            var potTargets = new List<PaintableZone.Target>();
+            var plantTargets = new List<PaintableZone.Target>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>())
+            {
+                bool isPot = r.name.EndsWith("_pot");
+                SetSlot(r, -1, isPot ? pot : natural);
+                (isPot ? potTargets : plantTargets).Add(new PaintableZone.Target(r));
+            }
+            Zone(root, "Pot", ZoneColorSource.ItemRole, potTargets.ToArray());
+            Zone(root, "Leaves", ZoneColorSource.Fixed, plantTargets.ToArray()).SetAllowOverride(false);
+            return Save(root, name);
+        }
+
+        /// <summary>
+        /// Replaces the renderer's mesh with a copy split into two sub-meshes: triangles whose texels
+        /// mostly satisfy <paramref name="first"/> go to sub-mesh 0, the rest to sub-mesh 1. Each triangle
+        /// is judged at its centroid and halfway to each corner, so seams and thin strips vote sensibly.
+        /// The split mesh is saved next to the model as {id}_split.asset.
+        /// </summary>
+        static void SplitByTexture(string id, Renderer r, string diffusePath, System.Func<Color, bool> first)
+        {
+            var filter = r.GetComponent<MeshFilter>();
+            var source = filter.sharedMesh;
+            var tex = LoadPixels(diffusePath);
+            var uv = source.uv;
+            var tris = source.triangles;
+            var a = new List<int>();
+            var b = new List<int>();
+            for (int i = 0; i < tris.Length; i += 3)
+            {
+                Vector2 u0 = uv[tris[i]], u1 = uv[tris[i + 1]], u2 = uv[tris[i + 2]];
+                var c = (u0 + u1 + u2) / 3f;
+                int votes = 0;
+                foreach (var p in new[] { c, (c + u0) / 2f, (c + u1) / 2f, (c + u2) / 2f })
+                    if (first(tex.GetPixelBilinear(p.x, p.y)))
+                        votes++;
+                var list = votes >= 2 ? a : b;
+                list.Add(tris[i]);
+                list.Add(tris[i + 1]);
+                list.Add(tris[i + 2]);
+            }
+            Object.DestroyImmediate(tex);
+
+            var split = Object.Instantiate(source);
+            split.name = source.name + " (split)";
+            split.subMeshCount = 2;
+            split.SetTriangles(a, 0);
+            split.SetTriangles(b, 1);
+            split.RecalculateBounds();
+
+            var path = $"{Models}/{id}/{id}_split.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (existing != null)
+            {
+                EditorUtility.CopySerialized(split, existing);
+                Object.DestroyImmediate(split);
+                split = existing;
+            }
+            else
+            {
+                AssetDatabase.CreateAsset(split, path);
+            }
+            filter.sharedMesh = split;
+            Debug.Log($"[PaletteRoom] {id}: split {a.Count / 3} painted / {b.Count / 3} natural triangles.");
+        }
+
+        static Material Metal() => Lit("Powder Coat Black", null, null, new Color(0.16f, 0.16f, 0.17f), 0.45f, metallic: 0.6f);
 
         /// <summary>
         /// The roll about +Z that squares up a cushion facing +Z: the one that makes its outline smallest,

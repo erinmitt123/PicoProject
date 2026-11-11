@@ -47,6 +47,12 @@ namespace PaletteRoom
         {
             if (IsRunning || m_Room == null)
                 return;
+            // Nothing placed: an empty room would be saved to the lookbook as a blank page.
+            bool any = false;
+            foreach (var item in m_Room.Items)
+                any |= item != null;
+            if (!any)
+                return;
             StartCoroutine(Run(brief, stars));
         }
 
@@ -224,7 +230,7 @@ namespace PaletteRoom
             root.transform.SetParent(transform, false);
             m_Toast = root.transform;
             var canvas = UIKit.CreateWorldCanvas("Reveal Toast Canvas", new Vector2(W, H), m_Toast, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 16f);
+            var panel = UIKit.Window(canvas.transform, 16f);
             UIKit.Stretch(panel.rectTransform);
             m_ToastTitle = UIKit.Label(panel.transform, "Title", string.Empty, 17f, UIKit.TextColor, style: FontStyles.Bold);
             UIKit.Place(m_ToastTitle.rectTransform, Pad, Pad, W - 2 * Pad - 80f, 24f);
@@ -236,13 +242,14 @@ namespace PaletteRoom
 
         void ShowToast(Lookbook.Entry entry)
         {
-            m_ToastTitle.text = entry.briefId != null ? entry.title : "Saved to your lookbook";
+            m_ToastTitle.Localize(entry.briefId != null ? entry.title : "Saved to your lookbook");
             foreach (var star in m_ToastStars)
                 star.gameObject.SetActive(entry.briefId != null);
             UIKit.SetStars(m_ToastStars, entry.stars);
-            m_ToastBody.text = entry.briefId != null
-                ? $"Saved to your lookbook with the {entry.paletteName} palette. Open the lookbook from the dock to see your rooms."
-                : $"{entry.pieces.Count} pieces in the {entry.paletteName} palette. Open the lookbook from the dock to see your rooms.";
+            if (entry.briefId != null)
+                m_ToastBody.Localize("Saved to your lookbook with the {0} palette. Open the lookbook from the dock to see your rooms.", Loc.Arg(entry.paletteName));
+            else
+                m_ToastBody.Localize("{0} pieces in the {1} palette. Open the lookbook from the dock to see your rooms.", entry.pieces.Count, Loc.Arg(entry.paletteName));
             m_Toast.gameObject.SetActive(true);
             UIKit.PlaceInFront(m_Toast, m_Head, 1.1f, -0.25f);
             if (m_HideToast != null)

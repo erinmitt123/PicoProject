@@ -1,0 +1,174 @@
+{
+  "steps": [
+    {
+      "id": "welcome",
+      "title": "Welcome to Palette Room",
+      "body": "Let's design this room together, one piece at a time. A glowing arrow will point at what to use next. You can go back or skip the tour at any time.",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "",
+      "say": ""
+    },
+    {
+      "id": "pinch",
+      "title": "Point and pinch",
+      "body": "Hold up a hand, palm facing away, and a ray comes out of it. Point the ray at a button and pinch your thumb and index finger together to press it. With controllers, point and pull the trigger.",
+      "tryIt": "Point at Next and pinch.",
+      "goal": "None",
+      "detail": "",
+      "target": "tutorial.next",
+      "say": ""
+    },
+    {
+      "id": "dock",
+      "title": "Your Palettes panel",
+      "body": "Everything starts from this panel. Panels stay where you put them in your room, and each one has a bar underneath, like a window's title bar.",
+      "tryIt": "Pinch the bar under the Palettes panel, move it somewhere comfortable, and let go.",
+      "goal": "MovePanel",
+      "detail": "",
+      "target": "dock.bar",
+      "say": ""
+    },
+    {
+      "id": "open-shop",
+      "title": "Open the shopping list",
+      "body": "The shopping list has every piece of furniture, in real-world sizes. Let's furnish the room one piece at a time.",
+      "tryIt": "Press Shopping list.",
+      "goal": "OpenShoppingList",
+      "detail": "",
+      "target": "dock.shopping",
+      "say": ""
+    },
+    {
+      "id": "add-sofa",
+      "title": "Start with a sofa",
+      "body": "Big pieces come first. The sofa takes the room's main color. Each + places a piece in front of you.",
+      "tryIt": "Press + on the sofa.",
+      "goal": "AddPiece",
+      "detail": "Sofa",
+      "target": "shop.add:Sofa",
+      "say": ""
+    },
+    {
+      "id": "add-rug",
+      "title": "Ground it with a rug",
+      "body": "A rug ties the seating together and carries the main color across the floor.",
+      "tryIt": "Press + on the rug.",
+      "goal": "AddPiece",
+      "detail": "Rug",
+      "target": "shop.add:Rug",
+      "say": ""
+    },
+    {
+      "id": "add-table",
+      "title": "Add a coffee table",
+      "body": "Supporting pieces like tables and shelves take the second color, about a third of the room.",
+      "tryIt": "Press + on the coffee table.",
+      "goal": "AddPiece",
+      "detail": "CoffeeTable",
+      "target": "shop.add:CoffeeTable",
+      "say": ""
+    },
+    {
+      "id": "add-radio",
+      "title": "Turn on some music",
+      "body": "Small accents bring the last touch of color. This radio plays the music: wherever you put it, that's where the sound comes from.",
+      "tryIt": "Press + on the radio.",
+      "goal": "AddPiece",
+      "detail": "Radio",
+      "target": "shop.add:Radio",
+      "say": ""
+    },
+    {
+      "id": "close-shop",
+      "title": "Close the list",
+      "body": "That's a good start. You can come back for more pieces any time.",
+      "tryIt": "Press Close.",
+      "goal": "CloseShoppingList",
+      "detail": "",
+      "target": "shop.close",
+      "say": ""
+    },
+    {
+      "id": "move",
+      "title": "Move the sofa",
+      "body": "Every piece can be picked up and put somewhere new. Point at it and pinch from a distance, or grab it up close. Pieces glow red where they won't fit.",
+      "tryIt": "Pinch the sofa, drag it to a new spot, and let go.",
+      "goal": "MoveFurniture",
+      "detail": "",
+      "target": "item:Sofa",
+      "say": ""
+    },
+    {
+      "id": "color-piece",
+      "title": "Color one piece",
+      "body": "A quick pinch and release on a piece, without moving it, opens its colors. Choose which palette color each part uses, like the cushions or the legs.",
+      "tryIt": "Quick-pinch the sofa.",
+      "goal": "ClickFurniture",
+      "detail": "",
+      "target": "item:Sofa",
+      "say": ""
+    },
+    {
+      "id": "palette",
+      "title": "Try a palette",
+      "body": "Each card is a five-color palette. The room follows the 60-30-10 rule: about 60% main color, 30% supporting color and 10% accent.",
+      "tryIt": "Pinch a palette card and watch the color sweep across the room.",
+      "goal": "PickPalette",
+      "detail": "",
+      "target": "dock.palette",
+      "say": "Try a palette. Each card is a five color palette. The room follows the sixty thirty ten rule: about sixty percent main color, thirty percent supporting color, and ten percent accent. Pinch a palette card, and watch the color sweep across the room."
+    },
+    {
+      "id": "wheel",
+      "title": "Make your own palette",
+      "body": "The color wheel turns a color you love into a full palette, using color harmonies. Find it here whenever you're ready.",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "dock.wheel",
+      "say": ""
+    },
+    {
+      "id": "briefs",
+      "title": "Design briefs",
+      "body": "Want a challenge? Design briefs give you a goal to design to. Meet a brief to earn up to three stars.",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "dock.briefs",
+      "say": ""
+    },
+    {
+      "id": "lookbook",
+      "title": "Your lookbook",
+      "body": "Save snapshots of your rooms in the lookbook, lay a saved room out again, or send its shopping list to your phone.",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "dock.lookbook",
+      "say": ""
+    },
+    {
+      "id": "settings",
+      "title": "Settings",
+      "body": "Music, sound effect and voice volumes, the language, the main menu and Quit are all in Settings. Lost this panel? Press the menu button on a controller to bring it back.",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "dock.settings",
+      "say": ""
+    },
+    {
+      "id": "done",
+      "title": "You're all set",
+      "body": "Your room is saved on the headset, so you can carry on next time. Take the tour again from Tutorial in the Palettes panel. Have fun!",
+      "tryIt": "",
+      "goal": "None",
+      "detail": "",
+      "target": "",
+      "say": ""
+    }
+  ]
+}

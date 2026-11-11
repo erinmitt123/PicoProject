@@ -30,7 +30,7 @@ namespace PaletteRoom
         {
             m_Head = eventCamera.transform;
             var canvas = UIKit.CreateWorldCanvas("Room Match Canvas", new Vector2(W, H), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 16f);
+            var panel = UIKit.Window(canvas.transform, 16f);
             UIKit.Stretch(panel.rectTransform);
             var body = panel.transform;
 
@@ -79,9 +79,9 @@ namespace PaletteRoom
         {
             m_Scanning = true;
             m_ScanStarted = Time.unscaledTime;
-            m_Title.text = "One moment…";
-            m_Name.text = "Matching to your room…";
-            m_Details.text = "Reading the colors around you to pick the palette that suits this room.";
+            m_Title.Localize("One moment…");
+            m_Name.Localize("Matching to your room…");
+            m_Details.Localize("Reading the colors around you to pick the palette that suits this room.");
             SetResultVisible(false);
             Open();
         }
@@ -110,8 +110,8 @@ namespace PaletteRoom
             m_Scanning = false;
 
             var p = match.palette;
-            m_Title.text = "Using palette that matches colors in this room:";
-            m_Name.text = p.name;
+            m_Title.Localize("Using palette that matches colors in this room:");
+            m_Name.Localize(p.name);
             var colors = new[] { p.dominant, p.secondary, p.accent, p.neutral, p.highlight };
             for (int i = 0; i < 5; i++)
                 m_PaletteSwatches[i].color = colors[i];
@@ -124,10 +124,11 @@ namespace PaletteRoom
             }
             m_RoomLabel.gameObject.SetActive(true);
             string main = match.roomColors.Length > 0 ? ColorNames.Describe(match.roomColors[0].color) : "neutral";
+            string mainName = main;
             float share = match.roomColors.Length > 0 ? match.roomColors[0].share : 1f;
             string source = match.fromEmulatorScene ? "The emulator's room" : "The room";
-            m_Details.text = $"{ColorHarmony.DisplayName(p.harmony)} palette · {source} reads mostly {main} ({share:P0}), " +
-                             $"so this is the closest of {PalettePresets.All.Count} palettes. Pick another anytime from the dock.";
+            m_Details.Localize("{0} palette · {1} reads mostly {2} ({3}), so this is the closest of {4} palettes. Pick another anytime from the dock.",
+                Loc.Arg(ColorHarmony.DisplayName(p.harmony)), Loc.Arg(source), Loc.Lazy(() => Loc.ColorName(mainName)), share.ToString("P0"), PalettePresets.All.Count);
             SetResultVisible(true);
             onShown?.Invoke();
             RestartHideTimer();
@@ -137,8 +138,8 @@ namespace PaletteRoom
         public void ShowUnavailable(ColorPalette current)
         {
             m_Scanning = false;
-            m_Title.text = "Couldn't match this room's colors";
-            m_Name.text = current.name;
+            m_Title.Localize("Couldn't match this room's colors");
+            m_Name.Localize(current.name);
             var colors = new[] { current.dominant, current.secondary, current.accent, current.neutral, current.highlight };
             for (int i = 0; i < 5; i++)
                 m_PaletteSwatches[i].color = colors[i];
@@ -146,7 +147,7 @@ namespace PaletteRoom
             foreach (var s in m_RoomSwatches)
                 s.gameObject.SetActive(false);
             m_RoomLabel.gameObject.SetActive(false);
-            m_Details.text = "The headset camera isn't available here, so this is the default palette. Pick another anytime from the dock.";
+            m_Details.Localize("The headset camera isn't available here, so this is the default palette. Pick another anytime from the dock.");
             if (!gameObject.activeSelf)
                 Open();
             RestartHideTimer();

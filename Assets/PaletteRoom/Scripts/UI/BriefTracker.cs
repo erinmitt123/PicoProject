@@ -25,6 +25,7 @@ namespace PaletteRoom
         Image[] m_Stars;
         readonly List<(TextMeshProUGUI mark, TextMeshProUGUI text)> m_Rows = new List<(TextMeshProUGUI, TextMeshProUGUI)>();
         float m_NextCheck;
+        Button m_Reveal;
 
         public DesignBrief Brief => m_Brief;
         public int Stars { get; private set; }
@@ -39,7 +40,7 @@ namespace PaletteRoom
             float rowsY = Pad + 22f + 30f + 24f;
             float height = rowsY + MaxRows * RowH + 8f + ButtonH + Pad;
             var canvas = UIKit.CreateWorldCanvas("Brief Tracker Canvas", new Vector2(W, height), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 14f);
+            var panel = UIKit.Window(canvas.transform, 14f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -63,20 +64,22 @@ namespace PaletteRoom
             float buttonsY = height - Pad - ButtonH;
             float half = (W - 2 * Pad - 8f) / 2f;
             var reveal = UIKit.Button(p, "Reveal", "Reveal & save", 11f, true, () => RevealRequested?.Invoke());
+            m_Reveal = reveal;
             UIKit.Place((RectTransform)reveal.transform, Pad, buttonsY, half, ButtonH);
             var exit = UIKit.Button(p, "Exit", "End brief", 10f, false, () => ExitRequested?.Invoke());
             UIKit.Place((RectTransform)exit.transform, Pad + half + 8f, buttonsY, half, ButtonH);
 
             m_Room.Changed += Refresh;
             m_Palettes.PaletteChanged += _ => Refresh();
+            Loc.Changed += Refresh; // the goal lines are written in the current language
             gameObject.SetActive(false);
         }
 
         public void Begin(DesignBrief brief)
         {
             m_Brief = brief;
-            m_Title.text = brief.title;
-            m_Pitch.text = brief.pitch;
+            m_Title.Localize(brief.title);
+            m_Pitch.Localize(brief.pitch);
             gameObject.SetActive(true);
             Refresh();
         }
@@ -104,6 +107,11 @@ namespace PaletteRoom
             var score = m_Brief.Evaluate(m_Room.Items, m_Palettes.Current, m_Room.IsWellPlaced);
             Stars = score.stars;
             UIKit.SetStars(m_Stars, score.stars);
+            // An empty room has nothing to reveal or save.
+            bool any = false;
+            foreach (var item in m_Room.Items)
+                any |= item != null;
+            m_Reveal.interactable = any;
             for (int i = 0; i < m_Rows.Count; i++)
             {
                 var (mark, text) = m_Rows[i];
@@ -113,9 +121,9 @@ namespace PaletteRoom
                 if (!has)
                     continue;
                 var goal = score.goals[i];
-                mark.text = goal.met ? "√" : "○";
+                mark.SetPlain(goal.met ? "√" : "○");
                 mark.color = goal.met ? Done : Todo;
-                text.text = goal.text;
+                text.SetPlain(goal.text); // already in the current language
                 text.color = goal.met ? UIKit.TextColor : UIKit.MutedTextColor;
             }
         }

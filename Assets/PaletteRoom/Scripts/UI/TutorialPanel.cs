@@ -16,103 +16,98 @@ namespace PaletteRoom
         ClickFurniture,
         SavePalette,
         AddPiece,
+        OpenShoppingList,
+        CloseShoppingList,
     }
 
     /// <summary>
-    /// The guided tour, written for someone in the headset using their hands (with controller notes):
-    /// one step at a time on a floating card, with Back / Skip tour / Next. Steps that teach an action
-    /// wait for the user to do it (the app reports it through <see cref="Notify"/>), say so, and move on
-    /// by themselves; Next is always there so nobody gets stuck. It's started from the welcome panel's
-    /// the first sample room or the Palettes panel's Tutorial button.
+    /// The guided tour. It furnishes an empty room one piece at a time and then walks through every
+    /// screen, with a <see cref="TutorialPointer"/> outlining the exact button to press (or hovering over
+    /// the piece to use) at each step, and a spoken English narration. Steps that teach an action wait for
+    /// the user to do it (the app reports it through <see cref="Notify"/>), cheer, and move on by
+    /// themselves; Next is always there so nobody gets stuck.
+    /// The steps live in Resources/Tutorial/tutorial.json (also read by tools/generate_narration.py, which
+    /// makes Resources/Tutorial/Voice/&lt;id&gt;.ogg); targets are named there and found by the app.
     /// </summary>
     public class TutorialPanel : MonoBehaviour
     {
-        const float W = 430f, H = 300f, Pad = 20f, ButtonH = 38f, Gap = 8f;
-        const float AdvanceDelay = 1.6f;
+        const float W = 440f, H = 316f, Pad = 20f, ButtonH = 38f, Gap = 8f;
+        const float AdvanceDelay = 1.4f;
 
         static readonly Color TryColor = new Color(0.17f, 0.20f, 0.24f, 1f);
         static readonly Color DoneColor = new Color(0.27f, 0.6f, 0.36f);
 
-        struct Step
+        [Serializable]
+        class Step
         {
-            public string title, body, tryIt;
-            public TutorialGoal goal;
-
-            public Step(string title, string body, string tryIt = null, TutorialGoal goal = TutorialGoal.None)
-            {
-                this.title = title;
-                this.body = body;
-                this.tryIt = tryIt;
-                this.goal = goal;
-            }
+            public string id, title, body, tryIt, say, goal, detail, target;
+            [NonSerialized] public TutorialGoal goalValue;
         }
 
-        static readonly Step[] Steps =
+        [Serializable]
+        class StepList
         {
-            new Step("Welcome to Palette Room",
-                "This tour shows you how to restyle a room in color, using the furniture in front of you. It takes a couple of minutes. Go back or skip the tour at any time."),
-            new Step("Point and pinch",
-                "Hold up a hand, palm facing away, and a ray comes out of it. Point the ray at a button and pinch your thumb and index finger together to press it. Up close, poke buttons with a fingertip. With controllers, point and pull the trigger.",
-                "Point at Next and pinch to carry on."),
-            new Step("Move a panel",
-                "Panels stay where you put them in your room instead of following your head. Each one has a bar underneath it, like a window's title bar.",
-                "Pinch the bar under the Palettes panel, drag it somewhere comfortable, and let go.", TutorialGoal.MovePanel),
-            new Step("Pick a palette",
-                "Each card is a five-color palette built on a color-wheel harmony. The room follows the 60-30-10 design rule: about 60% main color, 30% supporting color and 10% accent. The chips along the top filter by harmony.",
-                "Pinch any palette card and watch the color sweep across the room.", TutorialGoal.PickPalette),
-            new Step("Move the furniture",
-                "Every piece can be picked up and put somewhere new. Point at it and pinch from a distance, or reach out and grab it up close. Pieces stay on your floor, and glow red where they won't fit against a wall or your real furniture.",
-                "Pinch a piece, drag it to a new spot, and let go.", TutorialGoal.MoveFurniture),
-            new Step("Color one piece",
-                "A quick pinch and release on a piece, without moving it, opens its colors. Choose which palette color each part uses, such as a sofa's cushions or a table's legs.",
-                "Quick-pinch a piece to open its colors.", TutorialGoal.ClickFurniture),
-            new Step("Make your own palette",
-                "The color wheel turns a color you love into a full palette. Pick a color on the wheel, choose one of the suggested harmonies, tap a swatch to fine-tune it, then press Done.",
-                "Open Color wheel in the Palettes panel and save a palette with Done.", TutorialGoal.SavePalette),
-            new Step("Add furniture",
-                "The shopping list has every piece in real-world sizes. Pinch a picture to set the piece down in front of you, or pinch and hold a picture to pick the piece up and carry it into place.",
-                "Open Shopping list in the Palettes panel and add a piece.", TutorialGoal.AddPiece),
-            new Step("Design briefs",
-                "Want a challenge? Design briefs give you a goal to design to, with the pieces and colors it calls for. Meet the brief to earn up to three stars, then reveal the room to save it."),
-            new Step("Your lookbook",
-                "In the Lookbook, Reveal & save takes a snapshot of your room. Pinch any saved room to lay it out again, or send its shopping list, with every size and color, to your phone or email."),
-            new Step("Saved for next time",
-                "Your palettes, color wheel colors, lookbook and the room you're working on are kept on the headset. Next time, choose Continue last room on the welcome panel."),
-            new Step("Getting around",
-                "Lost the Palettes panel? Press the menu button on a controller to bring it back in front of you. When you're finished, choose Exit in the Palettes panel. You'll be asked to confirm before Palette Room closes."),
-            new Step("You're all set",
-                "That's the tour. Choose Tutorial in the Palettes panel to take it again any time. Have fun restyling your room!"),
-        };
+            public Step[] steps;
+        }
 
+        Step[] m_Steps;
         TextMeshProUGUI m_Counter, m_Title, m_Body, m_Try, m_Status;
-        Button m_Back, m_Skip, m_Next;
+        Button m_Back, m_Skip, m_Next, m_Replay;
         TextMeshProUGUI m_BackLabel, m_NextLabel;
+        RectTransform m_ProgressFill;
+        TutorialPointer m_Pointer;
+        Func<string, Component> m_ResolveTarget;
+        AudioSource m_Voice;
         int m_Index = -1;
         bool m_GoalMet;
         Coroutine m_Advance;
 
         public bool Running => m_Index >= 0;
 
+        /// <summary>The Next button, which the tour points at while teaching how to press.</summary>
+        public RectTransform NextButton => m_Next != null ? (RectTransform)m_Next.transform : null;
+
         /// <summary>The tour ended, finished or skipped.</summary>
         public event Action Ended;
 
-        public void Build(Camera eventCamera)
+        /// <summary>A step was shown; the argument is its target name (empty for none), so the app can make it reachable.</summary>
+        public event Action<string> StepShown;
+
+        /// <param name="resolveTarget">Finds a step's target by name ("dock.shopping", "item:Sofa"…): a UI RectTransform, a piece, or null when it isn't on show.</param>
+        public void Build(Camera eventCamera, TutorialPointer pointer, Func<string, Component> resolveTarget)
         {
+            m_Pointer = pointer;
+            m_ResolveTarget = resolveTarget;
+            m_Steps = LoadSteps();
+
             var canvas = UIKit.CreateWorldCanvas("Tutorial Canvas", new Vector2(W, H), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 18f);
-            UIKit.Stretch(panel.rectTransform);
+            var panel = UIKit.Window(canvas.transform, 18f);
             var p = panel.transform;
 
             m_Counter = UIKit.Label(p, "Counter", string.Empty, 10f, UIKit.MutedTextColor);
-            UIKit.Place(m_Counter.rectTransform, Pad, Pad, W - 2 * Pad, 14f);
+            UIKit.Place(m_Counter.rectTransform, Pad, Pad, W - 2 * Pad - 110f, 14f);
+            m_Replay = UIKit.Button(p, "Replay", "Hear again", 9.5f, false, PlayVoice);
+            UIKit.Place((RectTransform)m_Replay.transform, W - Pad - 100f, Pad - 4f, 100f, 22f);
+
+            var track = UIKit.Panel(p, "Progress", new Color(0f, 0f, 0f, 0.08f), 2f);
+            track.raycastTarget = false;
+            UIKit.Place(track.rectTransform, Pad, Pad + 22f, W - 2 * Pad, 4f);
+            var fill = UIKit.Panel(track.transform, "Fill", UIKit.ThemeColor(2), 2f);
+            fill.raycastTarget = false;
+            m_ProgressFill = fill.rectTransform;
+            m_ProgressFill.anchorMin = Vector2.zero;
+            m_ProgressFill.anchorMax = new Vector2(0f, 1f);
+            m_ProgressFill.pivot = new Vector2(0f, 0.5f);
+            m_ProgressFill.offsetMin = m_ProgressFill.offsetMax = Vector2.zero;
+
             m_Title = UIKit.Label(p, "Title", string.Empty, 18f, UIKit.TextColor, style: FontStyles.Bold);
-            UIKit.Place(m_Title.rectTransform, Pad, Pad + 18f, W - 2 * Pad, 24f);
+            UIKit.Place(m_Title.rectTransform, Pad, Pad + 34f, W - 2 * Pad, 24f);
             m_Body = UIKit.Label(p, "Body", string.Empty, 11.5f, UIKit.MutedTextColor);
-            UIKit.Place(m_Body.rectTransform, Pad, Pad + 48f, W - 2 * Pad, 110f);
-            m_Try = UIKit.Label(p, "Try It", string.Empty, 11.5f, TryColor, style: FontStyles.Bold);
-            UIKit.Place(m_Try.rectTransform, Pad, Pad + 162f, W - 2 * Pad, 32f);
+            UIKit.Place(m_Body.rectTransform, Pad, Pad + 64f, W - 2 * Pad, 104f);
+            m_Try = UIKit.Label(p, "Try It", string.Empty, 12f, TryColor, style: FontStyles.Bold);
+            UIKit.Place(m_Try.rectTransform, Pad, Pad + 172f, W - 2 * Pad, 32f);
             m_Status = UIKit.Label(p, "Status", string.Empty, 11f, DoneColor, style: FontStyles.Bold);
-            UIKit.Place(m_Status.rectTransform, Pad, Pad + 196f, W - 2 * Pad, 16f);
+            UIKit.Place(m_Status.rectTransform, Pad, Pad + 206f, W - 2 * Pad, 16f);
 
             float third = (W - 2 * Pad - 2 * Gap) / 3f;
             float y = H - Pad - ButtonH;
@@ -124,7 +119,44 @@ namespace PaletteRoom
             UIKit.Place((RectTransform)m_Next.transform, Pad + 2 * (third + Gap), y, third, ButtonH);
             m_BackLabel = m_Back.GetComponentInChildren<TextMeshProUGUI>();
             m_NextLabel = m_Next.GetComponentInChildren<TextMeshProUGUI>();
+
+            m_Voice = gameObject.AddComponent<AudioSource>();
+            m_Voice.playOnAwake = false;
+            m_Voice.spatialBlend = 0f;
+            m_Voice.priority = 10;
+
+            Loc.Changed += OnLanguageChanged;
             gameObject.SetActive(false);
+        }
+
+        void OnDestroy() => Loc.Changed -= OnLanguageChanged;
+
+        static Step[] LoadSteps()
+        {
+            var asset = Resources.Load<TextAsset>("Tutorial/tutorial");
+            Step[] steps = null;
+            if (asset != null)
+            {
+                try
+                {
+                    steps = JsonUtility.FromJson<StepList>(asset.text)?.steps;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[PaletteRoom] Couldn't read the tutorial: {e.Message}");
+                }
+            }
+            if (steps == null || steps.Length == 0)
+            {
+                Debug.LogWarning("[PaletteRoom] Tutorial steps missing; using a short tour.");
+                steps = new[]
+                {
+                    new Step { id = "welcome", title = "Welcome to Palette Room", body = "Pick palettes from the Palettes panel, add furniture from the shopping list, and grab pieces to move them." },
+                };
+            }
+            foreach (var s in steps)
+                s.goalValue = Enum.TryParse(s.goal, out TutorialGoal g) ? g : TutorialGoal.None;
+            return steps;
         }
 
         public void Begin()
@@ -135,15 +167,21 @@ namespace PaletteRoom
         }
 
         /// <summary>The user did something; if the current step was waiting for it, the step is done.</summary>
-        public void Notify(TutorialGoal goal)
+        /// <param name="detail">What it was done to, for steps that ask for one thing (the kind of piece added).</param>
+        public void Notify(TutorialGoal goal, string detail = null)
         {
-            if (!Running || m_GoalMet || goal == TutorialGoal.None || Steps[m_Index].goal != goal)
+            if (!Running || m_GoalMet || goal == TutorialGoal.None)
+                return;
+            var step = m_Steps[m_Index];
+            if (step.goalValue != goal || (!string.IsNullOrEmpty(step.detail) && step.detail != detail))
                 return;
             if (!isActiveAndEnabled)
                 return; // put away for the reveal; the step waits until the card is back
             m_GoalMet = true;
-            m_Status.text = m_Index + 1 < Steps.Length ? "Nice, that's it! Moving on…" : "Nice, that's it!";
+            m_Status.Localize(m_Index + 1 < m_Steps.Length ? "Nice, that's it! Moving on…" : "Nice, that's it!");
             m_Try.color = DoneColor;
+            m_Pointer?.Point(null);
+            Sfx.Play(SfxKind.Success);
             StopAdvance();
             m_Advance = StartCoroutine(AdvanceSoon(m_Index));
         }
@@ -154,9 +192,13 @@ namespace PaletteRoom
             bool wasRunning = Running;
             m_Index = -1;
             SaveData.TutorialSeen = true;
+            StopVoice();
+            m_Pointer?.Point(null);
             gameObject.SetActive(false);
             if (wasRunning)
             {
+                if (completed)
+                    Sfx.Play(SfxKind.Success);
                 Debug.Log(completed ? "[PaletteRoom] Tutorial finished." : "[PaletteRoom] Tutorial skipped.");
                 Ended?.Invoke();
             }
@@ -165,22 +207,95 @@ namespace PaletteRoom
         void ShowStep(int index)
         {
             StopAdvance();
-            m_Index = Mathf.Clamp(index, 0, Steps.Length - 1);
+            m_Index = Mathf.Clamp(index, 0, m_Steps.Length - 1);
             m_GoalMet = false;
-            var step = Steps[m_Index];
-            m_Counter.text = $"Tutorial · Step {m_Index + 1} of {Steps.Length}";
-            m_Title.text = step.title;
-            m_Body.text = step.body;
-            m_Try.text = string.IsNullOrEmpty(step.tryIt) ? string.Empty : "Try it: " + step.tryIt;
+            var step = m_Steps[m_Index];
+            m_Counter.Localize("Tutorial · Step {0} of {1}", m_Index + 1, m_Steps.Length);
+            m_ProgressFill.anchorMax = new Vector2((m_Index + 1f) / m_Steps.Length, 1f);
+            m_ProgressFill.GetComponent<Image>().color = UIKit.ThemeColor(2);
+            m_Title.Localize(step.title);
+            m_Body.Localize(step.body);
+            if (string.IsNullOrEmpty(step.tryIt))
+                m_Try.SetPlain(string.Empty);
+            else
+                m_Try.Localize("Try it: {0}", Loc.Arg(step.tryIt));
             m_Try.color = TryColor;
-            m_Try.fontStyle = FontStyles.Bold;
-            m_Status.text = string.Empty;
+            m_Status.SetPlain(string.Empty);
             m_Back.interactable = m_Index > 0;
             m_BackLabel.color = m_Index > 0 ? UIKit.TextColor : UIKit.MutedTextColor;
-            bool last = m_Index == Steps.Length - 1;
-            m_NextLabel.text = last ? "Finish" : "Next";
+            bool last = m_Index == m_Steps.Length - 1;
+            m_NextLabel.Localize(last ? "Finish" : "Next");
             m_Skip.gameObject.SetActive(!last);
+
+            string target = step.target ?? string.Empty;
+            StepShown?.Invoke(target);
+            if (m_Pointer != null)
+            {
+                if (string.IsNullOrEmpty(target) || m_ResolveTarget == null)
+                    m_Pointer.Point(null);
+                else
+                    m_Pointer.Point(() => m_ResolveTarget(target));
+            }
+            PlayVoice();
         }
+
+        // ---- narration -------------------------------------------------------------------------
+
+        AudioClip VoiceClip()
+        {
+            if (!Running || !Loc.IsEnglish)
+                return null; // recorded in English only; Chinese reads from the card
+            return Resources.Load<AudioClip>("Tutorial/Voice/" + m_Steps[m_Index].id);
+        }
+
+        void PlayVoice()
+        {
+            var clip = VoiceClip();
+            m_Replay.gameObject.SetActive(clip != null);
+            if (clip == null)
+            {
+                StopVoice();
+                return;
+            }
+            m_Voice.Stop();
+            m_Voice.clip = clip;
+            m_Voice.volume = AudioLevels.VoiceGain;
+            m_Voice.Play();
+            AmbientMusic.Instance?.Duck(true);
+        }
+
+        void StopVoice()
+        {
+            if (m_Voice != null)
+                m_Voice.Stop();
+            AmbientMusic.Instance?.Duck(false);
+        }
+
+        void Update()
+        {
+            if (m_Voice == null)
+                return;
+            m_Voice.volume = AudioLevels.VoiceGain;
+            if (!m_Voice.isPlaying)
+                AmbientMusic.Instance?.Duck(false);
+        }
+
+        void OnDisable() => StopVoice();
+
+        void OnLanguageChanged()
+        {
+            if (!Running)
+                return;
+            if (Loc.IsEnglish)
+                PlayVoice();
+            else
+            {
+                StopVoice();
+                m_Replay.gameObject.SetActive(false);
+            }
+        }
+
+        // ---- moving through the steps ------------------------------------------------------------
 
         IEnumerator AdvanceSoon(int from)
         {
@@ -199,7 +314,7 @@ namespace PaletteRoom
 
         void OnNext()
         {
-            if (m_Index >= Steps.Length - 1)
+            if (m_Index >= m_Steps.Length - 1)
                 End(completed: true);
             else
                 ShowStep(m_Index + 1);

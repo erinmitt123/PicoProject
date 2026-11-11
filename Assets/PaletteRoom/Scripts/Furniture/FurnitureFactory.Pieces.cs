@@ -51,6 +51,7 @@ namespace PaletteRoom
                 case FurnitureKind.Vase: Vase(b, v); return true;
                 case FurnitureKind.ThrowBlanket: ThrowBlanket(b, v); return true;
                 case FurnitureKind.WallShelf: WallShelf(b, v); return true;
+                case FurnitureKind.Radio: Radio(b, v); return true;
                 default: return false;
             }
         }
@@ -244,6 +245,33 @@ namespace PaletteRoom
             b.Zone("Shade", ZoneColorSource.Slot, PaletteSlot.Neutral, Upholstery, new Part(shade, new Vector3(0f, h * 0.62f, 0f), Quaternion.identity), doubleSided: true);
             b.Zone("Bulb", ZoneColorSource.Fixed, PaletteSlot.Neutral, Bulb, false,
                 new Part(Sphere(), new Vector3(0f, h * 0.72f, 0f), Quaternion.identity, Vector3.one * w * 0.18f));
+        }
+
+        void Radio(Builder b, FurnitureVariant v)
+        {
+            // A little retro table radio: rounded case, fabric speaker, a tuning window, two knobs and a
+            // carry handle. The front faces +z. The music plays from it.
+            float w = v.size.x, h = v.size.y, d = v.size.z;
+            const float feet = 0.012f;
+            float bodyH = h - feet, front = d / 2f;
+            b.Zone("Case", ZoneColorSource.ItemRole, PaletteSlot.Accent, Paint,
+                Part.Box(new Vector3(0f, feet + bodyH / 2f, 0f), new Vector3(w, bodyH, d), 0.022f));
+            b.Zone("Speaker", ZoneColorSource.Slot, PaletteSlot.Neutral, Upholstery,
+                Part.Box(new Vector3(-w * 0.17f, feet + bodyH * 0.5f, front), new Vector3(w * 0.5f, bodyH * 0.66f, 0.008f), 0.012f));
+            b.Zone("Dial", ZoneColorSource.Fixed, PaletteSlot.Neutral, MirrorGlass, false,
+                Part.Box(new Vector3(w * 0.25f, feet + bodyH * 0.66f, front), new Vector3(w * 0.32f, bodyH * 0.2f, 0.008f), 0.004f));
+            var knob = MeshKit.Lathe(new[] { new Vector2(0f, 0f), new Vector2(0.016f, 0f), new Vector2(0.015f, 0.014f), new Vector2(0f, 0.016f) }, 20);
+            var facing = Quaternion.Euler(90f, 0f, 0f); // lathe axis from up to forward
+            b.Zone("Knobs", ZoneColorSource.Fixed, PaletteSlot.Neutral, Metal,
+                new Part(knob, new Vector3(w * 0.16f, feet + bodyH * 0.3f, front), facing),
+                new Part(knob, new Vector3(w * 0.34f, feet + bodyH * 0.3f, front), facing));
+            b.Zone("Handle", ZoneColorSource.Fixed, PaletteSlot.Neutral, Oak,
+                Part.Box(new Vector3(0f, h + 0.03f, 0f), new Vector3(w * 0.62f, 0.014f, 0.022f), 0.006f),
+                Part.Box(new Vector3(-w * 0.3f, h + 0.012f, 0f), new Vector3(0.014f, 0.03f, 0.018f), 0.005f),
+                Part.Box(new Vector3(w * 0.3f, h + 0.012f, 0f), new Vector3(0.014f, 0.03f, 0.018f), 0.005f));
+            b.Zone("Feet", ZoneColorSource.Fixed, PaletteSlot.Neutral, Oak,
+                Part.Box(new Vector3(-w * 0.38f, feet / 2f, 0f), new Vector3(0.03f, feet, d * 0.7f), 0.004f),
+                Part.Box(new Vector3(w * 0.38f, feet / 2f, 0f), new Vector3(0.03f, feet, d * 0.7f), 0.004f));
         }
 
         void FloorMirror(Builder b, FurnitureVariant v)

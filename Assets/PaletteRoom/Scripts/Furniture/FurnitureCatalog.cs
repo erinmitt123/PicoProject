@@ -165,7 +165,126 @@ namespace PaletteRoom
             new Entry(FurnitureKind.WallShelf, "Wall Shelf", "Wall shelves", FurnitureRole.Accent, 0,
                 new FurnitureVariant("single", "Single", "80 cm", new Vector3(0.8f, 0.03f, 0.22f), seats: 1),
                 new FurnitureVariant("double", "Double", "80 cm, two tiers", new Vector3(0.8f, 0.03f, 0.22f), seats: 2)),
+            new Entry(FurnitureKind.Radio, "Radio", "Radios", FurnitureRole.Accent, 0,
+                new FurnitureVariant("retro", "Retro", "32 × 20 cm", new Vector3(0.32f, 0.2f, 0.12f))),
+
+            // ---- scanned pieces (Poly Haven, see Models/CREDITS.md) ----
+            new Entry(FurnitureKind.Settee, "Settee", "Sofas", FurnitureRole.Dominant, 0,
+                new FurnitureVariant("standard", "Standard", "157 × 66 cm")),
+            new Entry(FurnitureKind.LoungeChair, "Swivel Lounge Chair", "Armchairs", FurnitureRole.Secondary, 0,
+                new FurnitureVariant("standard", "Standard", "84 × 99 cm")),
+            new Entry(FurnitureKind.LeatherOttoman, "Leather Ottoman", "Ottomans", FurnitureRole.Accent, 0,
+                new FurnitureVariant("standard", "Standard", "88 × 62 cm")),
+            new Entry(FurnitureKind.InlayCoffeeTable, "Inlay Coffee Table", "Coffee tables", FurnitureRole.Secondary, 0,
+                new FurnitureVariant("standard", "Standard", "120 × 60 cm")),
+            new Entry(FurnitureKind.RoundCoffeeTable, "Round Coffee Table", "Coffee tables", FurnitureRole.Secondary, 1,
+                new FurnitureVariant("small", "Small", "Ø 80 cm", scale: Vector3.one * 0.82f),
+                new FurnitureVariant("medium", "Medium", "Ø 98 cm")),
+            new Entry(FurnitureKind.CarvedNightstand, "Carved Nightstand", "Nightstands", FurnitureRole.Accent, 0,
+                new FurnitureVariant("standard", "Standard", "51 × 38 cm")),
+            new Entry(FurnitureKind.CarvedConsole, "Carved Console", "Console tables", FurnitureRole.Secondary, 0,
+                new FurnitureVariant("standard", "Standard", "127 × 48 cm")),
+            new Entry(FurnitureKind.ApothecaryChest, "Apothecary Chest", "Dressers", FurnitureRole.Secondary, 0,
+                new FurnitureVariant("six", "6 drawers", "120 × 53 cm", scale: new Vector3(1f, 1f, 0.75f))),
+            new Entry(FurnitureKind.SlattedMediaUnit, "Slatted Media Unit", "Media consoles", FurnitureRole.Secondary, 1,
+                new FurnitureVariant("150", "150 cm", "150 × 38 cm", scale: new Vector3(0.83f, 1f, 1f)),
+                new FurnitureVariant("180", "180 cm", "180 × 38 cm")),
+            new Entry(FurnitureKind.CubeShelves, "Cube Shelves", "Bookshelves", FurnitureRole.Secondary, 0,
+                new FurnitureVariant("3x4", "3 × 4", "108 × 156 cm")),
+            new Entry(FurnitureKind.TuftedDiningChair, "Tufted Dining Chair", "Dining chairs", FurnitureRole.Accent, 0,
+                new FurnitureVariant("standard", "Standard", "43 × 58 cm")),
+            new Entry(FurnitureKind.PedestalTable, "Pedestal Table", "Dining tables", FurnitureRole.Dominant, 0,
+                new FurnitureVariant("round", "Round", "Ø 105 cm")),
+            new Entry(FurnitureKind.ArchedMirror, "Arched Mirror", "Mirrors", FurnitureRole.Accent, 0,
+                new FurnitureVariant("standard", "Standard", "63 × 97 cm")),
+            new Entry(FurnitureKind.CeramicVase, "Ceramic Vase", "Vases", FurnitureRole.Accent, 1,
+                new FurnitureVariant("small", "Small", "25 cm", scale: Vector3.one * 0.62f),
+                new FurnitureVariant("medium", "Medium", "40 cm")),
+            new Entry(FurnitureKind.Succulent, "Succulent", "Plants", FurnitureRole.Accent, 0,
+                new FurnitureVariant("standard", "Standard", "27 cm")),
         };
+
+        /// <summary>
+        /// How far a piece may be resized, relative to its catalog size, so it stays something you could
+        /// actually buy and use. Seats and tables are held close to standard heights (seat 40–48 cm,
+        /// dining and desk tops 71–79 cm, coffee tables 35–48 cm); storage, rugs and decor vary more.
+        /// </summary>
+        public static (float min, float max) SizeRange(FurnitureKind kind)
+        {
+            switch (kind)
+            {
+                // Seat height has to stay sittable.
+                case FurnitureKind.Sofa:
+                case FurnitureKind.Settee:
+                    return (0.92f, 1.1f);
+                case FurnitureKind.Armchair:
+                case FurnitureKind.LoungeChair:
+                    return (0.92f, 1.08f);
+                case FurnitureKind.DeskChair:
+                case FurnitureKind.DiningChair:
+                case FurnitureKind.TuftedDiningChair:
+                    return (0.95f, 1.05f);
+                case FurnitureKind.Ottoman:
+                case FurnitureKind.LeatherOttoman:
+                case FurnitureKind.Bench:
+                    return (0.85f, 1.15f);
+
+                // Work and dining surfaces sit at 71–79 cm.
+                case FurnitureKind.Desk:
+                case FurnitureKind.DiningTable:
+                case FurnitureKind.PedestalTable:
+                    return (0.95f, 1.05f);
+                case FurnitureKind.ConsoleTable:
+                case FurnitureKind.CarvedConsole:
+                    return (0.9f, 1.1f);
+                case FurnitureKind.CoffeeTable:
+                case FurnitureKind.InlayCoffeeTable:
+                case FurnitureKind.RoundCoffeeTable:
+                case FurnitureKind.SideTable:
+                case FurnitureKind.Nightstand:
+                case FurnitureKind.CarvedNightstand:
+                    return (0.85f, 1.15f);
+
+                // Storage comes in many sizes.
+                case FurnitureKind.Bookshelf:
+                case FurnitureKind.CubeShelves:
+                    return (0.8f, 1.2f);
+                case FurnitureKind.Dresser:
+                case FurnitureKind.ApothecaryChest:
+                case FurnitureKind.MediaConsole:
+                case FurnitureKind.SlattedMediaUnit:
+                    return (0.85f, 1.15f);
+                case FurnitureKind.WallShelf:
+                    return (0.8f, 1.25f);
+
+                // Soft goods and decor.
+                case FurnitureKind.Rug:
+                    return (0.75f, 1.25f);
+                case FurnitureKind.ThrowPillow:
+                    return (0.85f, 1.15f);
+                case FurnitureKind.ThrowBlanket:
+                    return (0.9f, 1.1f);
+                case FurnitureKind.FloorLamp:
+                    return (0.85f, 1.15f);   // 136–184 cm
+                case FurnitureKind.TableLamp:
+                    return (0.75f, 1.3f);
+                case FurnitureKind.FloorMirror:
+                    return (0.9f, 1.1f);
+                case FurnitureKind.ArchedMirror:
+                case FurnitureKind.WallArt:
+                    return (0.7f, 1.3f);
+                case FurnitureKind.Plant:
+                    return (0.7f, 1.4f);
+                case FurnitureKind.Succulent:
+                case FurnitureKind.Vase:
+                case FurnitureKind.CeramicVase:
+                    return (0.7f, 1.4f);
+                case FurnitureKind.Radio:
+                    return (0.85f, 1.15f);
+                default:
+                    return (0.9f, 1.1f);
+            }
+        }
 
         public static Entry Get(FurnitureKind kind)
         {

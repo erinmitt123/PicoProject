@@ -726,6 +726,7 @@ MonoBehaviour:
   floorReticle: {fileID: 824024173}
   editorTestMode: 1
   autoStartSampleRoom: 0
+  roomScanPromptDelay: 6
 --- !u!114 &1365378901
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1103,7 +1104,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: ByteDance.PICO.XR::ByteDance.PICO.XR.PXR_Manager
   screenFade: 0
-  eyeTracking: 0
+  eyeTracking: 1
   trackingMode: -1
   sharpeningMode: 0
   sharpeningEnhance: 0

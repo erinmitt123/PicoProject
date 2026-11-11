@@ -27,7 +27,7 @@ namespace PaletteRoom
             const float previewH = 150f;
             float height = Pad + 24f + 8f + previewH + 10f + 18f + 34f + 8f + KeyboardHeight + 10f + ButtonH + 8f + 30f + Pad;
             var canvas = UIKit.CreateWorldCanvas("Send List Canvas", new Vector2(W, height), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 16f);
+            var panel = UIKit.Window(canvas.transform, 16f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -140,15 +140,15 @@ namespace PaletteRoom
         {
             m_To.text = text;
             m_To.caretPosition = text.Length;
-            m_Status.text = string.Empty;
+            m_Status.SetPlain(string.Empty);
         }
 
         public void Open(Lookbook.Entry entry, Transform anchor)
         {
             m_Entry = entry;
-            m_Title.text = $"Send the list for \"{entry.title}\"";
-            m_Preview.text = RoomList.Build(entry);
-            m_Status.text = string.Empty;
+            m_Title.Localize("Send the list for \"{0}\"", Loc.Arg(entry.title));
+            m_Preview.SetPlain(RoomList.Build(entry)); // the message as it will be sent
+            m_Status.SetPlain(string.Empty);
             gameObject.SetActive(true);
             if (anchor != null)
             {
@@ -183,15 +183,16 @@ namespace PaletteRoom
             switch (outcome)
             {
                 case ListSender.Outcome.Opened:
-                    m_Status.text = app == "share"
-                        ? "Pick an app to send it with. (The list is also copied.)"
-                        : $"Opened your {app} app with the list filled in — press send there. (Also copied.)";
+                    if (app == "share")
+                        m_Status.Localize("Pick an app to send it with. (The list is also copied.)");
+                    else
+                        m_Status.Localize("Opened your {0} app with the list filled in — press send there. (Also copied.)", Loc.Arg(app));
                     break;
                 case ListSender.Outcome.Invalid:
-                    m_Status.text = "Enter a phone number (at least 7 digits) or an email address.";
+                    m_Status.Localize("Enter a phone number (at least 7 digits) or an email address.");
                     break;
                 default:
-                    m_Status.text = $"No app on this headset can send it, so it's copied to the clipboard and saved to {saved}.";
+                    m_Status.Localize("No app on this headset can send it, so it's copied to the clipboard and saved to {0}.", saved);
                     break;
             }
             Debug.Log($"[PaletteRoom] Room list: {outcome} ({app}); saved to {saved}.");

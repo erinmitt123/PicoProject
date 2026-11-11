@@ -18,6 +18,8 @@ namespace PaletteRoom
 
         RectTransform m_Grid;
         TextMeshProUGUI m_Empty;
+        Button m_Reveal;
+        TextMeshProUGUI m_RevealLabel;
         readonly List<Texture2D> m_Thumbnails = new List<Texture2D>();
 
         public event Action<Lookbook.Entry> RestoreRequested;
@@ -31,7 +33,7 @@ namespace PaletteRoom
             float gridH = 1.6f * (CardH + Gap);
             float height = Pad + HeaderH + Gap + ButtonH + Gap + gridH + Gap + ButtonH + Pad;
             var canvas = UIKit.CreateWorldCanvas("Lookbook Canvas", new Vector2(W, height), transform, eventCamera);
-            var panel = UIKit.Panel(canvas.transform, "Panel", UIKit.PanelColor, 16f);
+            var panel = UIKit.Window(canvas.transform, 16f);
             UIKit.Stretch(panel.rectTransform);
             var p = panel.transform;
 
@@ -39,6 +41,8 @@ namespace PaletteRoom
             UIKit.Place(header.rectTransform, Pad, Pad, W - 2 * Pad, HeaderH);
             float y = Pad + HeaderH + Gap;
             var reveal = UIKit.Button(p, "Reveal Current", "Reveal & save this room", 11f, true, () => RevealCurrentRequested?.Invoke());
+            m_Reveal = reveal;
+            m_RevealLabel = reveal.GetComponentInChildren<TextMeshProUGUI>();
             UIKit.Place((RectTransform)reveal.transform, Pad, y, W - 2 * Pad, ButtonH);
             y += ButtonH + Gap;
 
@@ -61,8 +65,11 @@ namespace PaletteRoom
             ClearThumbnails();
         }
 
-        public void Open(Transform head)
+        /// <param name="canReveal">False when the room is empty: there's nothing to reveal, so the button says so.</param>
+        public void Open(Transform head, bool canReveal)
         {
+            m_Reveal.interactable = canReveal;
+            m_RevealLabel.Localize(canReveal ? "Reveal & save this room" : "Add furniture to reveal & save a room");
             gameObject.SetActive(true);
             UIKit.PlaceInFront(transform, head, 0.9f, 0.15f);
         }
@@ -122,7 +129,8 @@ namespace PaletteRoom
                 UIKit.SetStars(UIKit.StarRow(c, CardW - 62f, y, 16f), entry.stars);
             }
             y += 18f;
-            var meta = UIKit.Label(c, "Meta", $"{entry.paletteName} · {entry.pieces.Count} pieces · {entry.date}", 9f, UIKit.MutedTextColor);
+            var meta = UIKit.Label(c, "Meta", string.Empty, 9f, UIKit.MutedTextColor);
+            meta.Localize("{0} · {1} pieces · {2}", Loc.Arg(entry.paletteName), entry.pieces.Count, entry.date);
             UIKit.Place(meta.rectTransform, 8f, y, CardW - 16f, 14f);
             y += 16f;
             if (entry.paletteHex != null)
@@ -130,7 +138,7 @@ namespace PaletteRoom
                 for (int i = 0; i < entry.paletteHex.Length; i++)
                 {
                     ColorUtility.TryParseHtmlString(entry.paletteHex[i], out var color);
-                    var sw = UIKit.Panel(c, $"Swatch {i}", color, 4f);
+                    var sw = UIKit.Edge(UIKit.Panel(c, $"Swatch {i}", color, 4f));
                     UIKit.Place(sw.rectTransform, 8f + i * 20f, y, 16f, 16f);
                 }
             }

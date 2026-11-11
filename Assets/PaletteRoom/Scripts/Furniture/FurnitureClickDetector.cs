@@ -50,6 +50,9 @@ namespace PaletteRoom
         {
             m_PressedAt = Time.unscaledTime;
             m_PressedPos = transform.position;
+            Sfx.PlayAt(SfxKind.PickUp, transform.position, 0.8f);
+            // A small tick in the controller as the piece is taken (hands have no haptics).
+            (args.interactorObject as UnityEngine.XR.Interaction.Toolkit.Interactors.XRBaseInputInteractor)?.SendHapticImpulse(0.3f, 0.05f);
         }
 
         void OnSelectExited(SelectExitEventArgs args)
@@ -59,9 +62,16 @@ namespace PaletteRoom
             bool quick = Time.unscaledTime - m_PressedAt <= MaxClickSeconds;
             bool still = Vector3.Distance(transform.position, m_PressedPos) <= MaxClickMove;
             if (quick && still)
+            {
+                Sfx.Play(SfxKind.Click);
                 RaiseClicked(m_Item);
+            }
             else if (!still && m_Item != null)
+            {
+                Sfx.PlayAt(SfxKind.Drop, transform.position, 0.7f);
+                (args.interactorObject as UnityEngine.XR.Interaction.Toolkit.Interactors.XRBaseInputInteractor)?.SendHapticImpulse(0.45f, 0.07f);
                 Moved?.Invoke(m_Item);
+            }
         }
 
         /// <summary>Also used by Editor test mode for mouse clicks.</summary>

@@ -34,6 +34,14 @@ namespace PaletteRoom
         /// <summary>True once the panel has a world position (from first placement or the user).</summary>
         public bool IsPlaced => m_Placed;
 
+        /// <summary>The grab bar under the panel (for the tutorial to point at).</summary>
+        public RectTransform Bar => m_BarCanvas as RectTransform;
+
+        static readonly System.Collections.Generic.List<MovablePanel> s_All = new System.Collections.Generic.List<MovablePanel>();
+
+        /// <summary>Every movable panel, open or not (see <see cref="PanelSpace"/>).</summary>
+        public static System.Collections.Generic.IReadOnlyList<MovablePanel> All => s_All;
+
         /// <summary>
         /// Builds the grab bar under the panel's canvas and makes the panel grabbable.
         /// <paramref name="recallable"/> binds the menu button to bring it back in front of the user.
@@ -41,6 +49,8 @@ namespace PaletteRoom
         public void Setup(Transform head, Camera eventCamera, bool recallable)
         {
             m_Head = head;
+            if (!s_All.Contains(this))
+                s_All.Add(this);
             var canvas = GetComponentInChildren<Canvas>(true);
             m_PanelCanvas = canvas;
             var size = ((RectTransform)canvas.transform).sizeDelta * UIKit.MillimetresToMetres;
@@ -81,6 +91,9 @@ namespace PaletteRoom
             transform.position = m_Head.position + forward * m_RecallDistance + Vector3.down * m_RecallBelowEyes;
             transform.rotation = Quaternion.LookRotation(forward, Vector3.up);
             m_Placed = true;
+            PanelSpace.Forget(transform);
+            // Don't land on another open panel: swing further out to this panel's own side first.
+            PanelSpace.KeepClear(transform, m_Head, m_RecallYaw >= 0f ? 1f : -1f);
         }
 
         /// <summary>Places the panel only if it hasn't been placed yet, so it stays where the user left it.</summary>
@@ -94,7 +107,14 @@ namespace PaletteRoom
         // only disposed with the panel, never disabled.
         void OnEnable() => m_Recall?.Enable();
 
-        void OnDestroy() => m_Recall?.Dispose();
+        // Closing gives back the space this panel took: panels it swung aside return.
+        void OnDisable() => PanelSpace.Released(transform);
+
+        void OnDestroy()
+        {
+            m_Recall?.Dispose();
+            s_All.Remove(this);
+        }
 
         const float BarW = 0.14f, BarH = 0.014f, BarGap = 0.018f;
         // The ray is a cone, and its nearest hit wins. Sitting behind the panel's plane keeps the hit box
@@ -156,8 +176,8 @@ namespace PaletteRoom
             grab.farAttachMode = InteractableFarAttachMode.Far; // a ray grab keeps the panel at a distance
             grab.hoverEntered.AddListener(_ => RefreshBar(grab));
             grab.hoverExited.AddListener(_ => RefreshBar(grab));
-            grab.selectEntered.AddListener(_ => { m_Placed = true; RefreshBar(grab); Grabbed?.Invoke(); });
-            grab.selectExited.AddListener(_ => RefreshBar(grab));
+            grab.selectEntered.AddListener(_ => { m_Placed = true; PanelSpace.Forget(transform); RefreshBar(grab); Sfx.Play(SfxKind.PickUp, 0.6f, 1.2f); Grabbed?.Invoke(); });
+            grab.selectExited.AddListener(_ => { RefreshBar(grab); Sfx.Play(SfxKind.Drop, 0.35f, 1.4f); });
 
             var general = gameObject.AddComponent<XRGeneralGrabTransformer>();
             general.allowOneHandedScaling = false;
