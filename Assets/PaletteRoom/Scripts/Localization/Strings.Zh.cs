@@ -150,14 +150,13 @@ namespace PaletteRoom
             ["Keeps your colors"] = "保留你的颜色",
 
             // ---- shopping list ----------------------------------------------------------------------
-            ["Pick a size and add it to your room. Drag the list to scroll; grab furniture to move it."] = "选择尺寸并添加到房间。拖动列表可滚动；抓住家具可移动它。",
+            ["Pinch a picture and drag it into your room, or press + to place it in front of you."] = "捏住图片并拖到房间里，或按 + 放在你面前。",
             ["1 item"] = "1 件",
             ["{0} items"] = "{0} 件",
             ["Close"] = "关闭",
 
             // ---- furniture: names ---------------------------------------------------------------------
             ["Sofa"] = "沙发",
-            ["Rug"] = "地毯",
             ["Armchair"] = "扶手椅",
             ["Coffee Table"] = "茶几",
             ["Bookshelf"] = "书架",
@@ -200,7 +199,6 @@ namespace PaletteRoom
 
             // ---- furniture: categories ----------------------------------------------------------------
             ["Sofas"] = "沙发",
-            ["Rugs"] = "地毯",
             ["Armchairs"] = "扶手椅",
             ["Coffee tables"] = "茶几",
             ["Bookshelves"] = "书架",
@@ -349,7 +347,7 @@ namespace PaletteRoom
             ["Let the walls do the talking: three pieces of art, kept to one color family."] = "让墙面来说话：三幅挂画，保持同一色系。",
             ["A monochrome palette (one hue, many shades)"] = "单色配色（一个色相，多种深浅）",
             ["Green retreat"] = "绿意小憩",
-            ["Bring the outdoors in: three plants around a soft seat and a rug."] = "把户外带进来：三盆绿植围绕一个柔软的座位和一块地毯。",
+            ["Bring the outdoors in: three plants around a soft seat and a side table."] = "把户外带进来：三盆绿植围绕一个柔软的座位和一张边桌。",
             ["An analogous palette (neighbors on the wheel)"] = "邻近色配色（色轮上相邻的颜色）",
 
             // ---- lookbook, reveal, sending ------------------------------------------------------------
@@ -429,59 +427,24 @@ namespace PaletteRoom
 
             // ---- tutorial steps (Resources/Tutorial/tutorial.json) -----------------------------------
             ["Welcome to Palette Room"] = "欢迎来到调色间",
-            ["Let's design this room together, one piece at a time. A glowing arrow will point at what to use next. You can go back or skip the tour at any time."] =
-                "让我们一件一件地一起设计这个房间。发光的箭头会指向下一步要用的东西。你可以随时返回或跳过教程。",
             ["Point and pinch"] = "指向并捏合",
-            ["Hold up a hand, palm facing away, and a ray comes out of it. Point the ray at a button and pinch your thumb and index finger together to press it. With controllers, point and pull the trigger."] =
-                "抬起一只手，掌心朝外，手上会射出一条射线。用射线指向按钮，将拇指和食指捏合即可按下。使用手柄时，指向后扣动扳机。",
+            ["Point at a button and pinch your thumb and finger together to press it. With controllers, pull the trigger."] =
+                "指向按钮，将拇指和食指捏合即可按下。使用手柄时，扣动扳机。",
             ["Point at Next and pinch."] = "指向“下一步”并捏合。",
-            ["Your Palettes panel"] = "你的配色方案面板",
-            ["Everything starts from this panel. Panels stay where you put them in your room, and each one has a bar underneath, like a window's title bar."] =
-                "一切都从这个面板开始。面板会停留在你放置的位置，每个面板下方都有一个横条，就像窗口的标题栏。",
-            ["Pinch the bar under the Palettes panel, move it somewhere comfortable, and let go."] = "捏住配色方案面板下方的横条，移到舒适的位置，然后松开。",
             ["Open the shopping list"] = "打开购物清单",
-            ["The shopping list has every piece of furniture, in real-world sizes. Let's furnish the room one piece at a time."] = "购物清单里有所有家具，都是真实尺寸。让我们一件一件地布置房间。",
+            ["Every piece of furniture is in here, in real-world sizes."] = "所有家具都在这里，都是真实尺寸。",
             ["Press Shopping list."] = "按下“购物清单”。",
-            ["Start with a sofa"] = "从沙发开始",
-            ["Big pieces come first. The sofa takes the room's main color. Each + places a piece in front of you."] = "先放大件。沙发使用房间的主色。每按一次 + 就会在你面前放一件家具。",
-            ["Press + on the sofa."] = "按下沙发上的 +。",
-            ["Ground it with a rug"] = "铺一块地毯",
-            ["A rug ties the seating together and carries the main color across the floor."] = "地毯能把座位区连成一体，并让主色延伸到地面。",
-            ["Press + on the rug."] = "按下地毯上的 +。",
-            ["Add a coffee table"] = "添加一张茶几",
-            ["Supporting pieces like tables and shelves take the second color, about a third of the room."] = "桌子、架子等辅助家具使用第二种颜色，大约占房间的三分之一。",
-            ["Press + on the coffee table."] = "按下茶几上的 +。",
-            ["Turn on some music"] = "放点音乐",
-            ["Small accents bring the last touch of color. This radio plays the music: wherever you put it, that's where the sound comes from."] =
-                "小件点缀带来最后一抹色彩。这台收音机会播放音乐：你把它放在哪里，声音就从哪里传来。",
-            ["Press + on the radio."] = "按下收音机上的 +。",
-            ["Close the list"] = "关闭清单",
-            ["That's a good start. You can come back for more pieces any time."] = "开了个好头。你可以随时回来添加更多家具。",
-            ["Press Close."] = "按下“关闭”。",
-            ["Move the sofa"] = "移动沙发",
-            ["Every piece can be picked up and put somewhere new. Point at it and pinch from a distance, or grab it up close. Pieces glow red where they won't fit."] =
-                "每件家具都可以拿起并换个位置。从远处指向它并捏合，或在近处直接抓住。放不下的地方家具会发红光。",
-            ["Pinch the sofa, drag it to a new spot, and let go."] = "捏住沙发，拖到新位置，然后松开。",
-            ["Color one piece"] = "给一件家具上色",
-            ["A quick pinch and release on a piece, without moving it, opens its colors. Choose which palette color each part uses, like the cushions or the legs."] =
-                "在家具上快速捏合并松开（不要移动它），即可打开它的颜色。为每个部分选择配色中的颜色，比如坐垫或桌腿。",
-            ["Quick-pinch the sofa."] = "快速捏一下沙发。",
-            ["Try a palette"] = "试试配色方案",
-            ["Each card is a five-color palette. The room follows the 60-30-10 rule: about 60% main color, 30% supporting color and 10% accent."] =
-                "每张卡片都是一组五色配色。房间遵循 60-30-10 法则：约 60% 主色、30% 辅色和 10% 点缀色。",
-            ["Pinch a palette card and watch the color sweep across the room."] = "捏一下配色卡片，看着颜色在房间中铺开。",
-            ["Make your own palette"] = "制作你自己的配色",
-            ["The color wheel turns a color you love into a full palette, using color harmonies. Find it here whenever you're ready."] =
-                "色轮会根据色彩和谐规则，把你喜欢的一个颜色变成一整套配色。准备好了随时来这里找它。",
-            ["Want a challenge? Design briefs give you a goal to design to. Meet a brief to earn up to three stars."] = "想挑战一下？设计任务会给你一个设计目标。完成任务最多可获得三颗星。",
-            ["Your lookbook"] = "你的作品集",
-            ["Save snapshots of your rooms in the lookbook, lay a saved room out again, or send its shopping list to your phone."] =
-                "在作品集中保存房间快照，重新摆出已保存的房间，或把它的购物清单发送到你的手机。",
-            ["Music, sound effect and voice volumes, the language, the main menu and Quit are all in Settings. Lost this panel? Press the menu button on a controller to bring it back."] =
-                "音乐、音效和语音音量，语言，主菜单和退出都在“设置”中。找不到这个面板了？按手柄上的菜单键即可把它叫回来。",
+            ["Drag in a sofa"] = "拖入一张沙发",
+            ["Pinch a picture, drag it out into your room, and let go where you want it."] = "捏住一张图片，把它拖到房间里，在想要的位置松开。",
+            ["Drag the sofa into your room."] = "把沙发拖到你的房间里。",
+            ["Move it"] = "移动它",
+            ["Point at any piece, near or far, and pinch to grab it. Move your hand, then let go."] = "指向任意一件家具，无论远近，捏合即可抓住。移动你的手，然后松开。",
+            ["Grab the sofa and move it."] = "抓住沙发并移动它。",
+            ["Pick a palette"] = "挑选配色",
+            ["Each card is a set of colors. Pick one and the whole room changes to match."] = "每张卡片都是一组颜色。选一张，整个房间就会随之换色。",
+            ["Pinch a palette card."] = "捏一下配色卡片。",
             ["You're all set"] = "一切就绪",
-            ["Your room is saved on the headset, so you can carry on next time. Take the tour again from Tutorial in the Palettes panel. Have fun!"] =
-                "你的房间已保存在头显上，下次可以接着设计。可以随时从配色方案面板中的“教程”重新开始。玩得开心！",
+            ["The color wheel, briefs, lookbook and settings are all on the Palettes panel. Have fun!"] = "色轮、设计任务、作品集和设置都在配色方案面板上。玩得开心！",
         };
     }
 }

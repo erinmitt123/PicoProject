@@ -147,7 +147,7 @@ namespace PaletteRoom
 
             new DesignBrief("conversation", "Conversation corner",
                 "Seating that faces itself, so friends can talk across a table.",
-                new[] { (FurnitureKind.Sofa, 1), (FurnitureKind.Armchair, 1), (FurnitureKind.CoffeeTable, 1), (FurnitureKind.Rug, 1) },
+                new[] { (FurnitureKind.Sofa, 1), (FurnitureKind.Armchair, 1), (FurnitureKind.CoffeeTable, 1) },
                 8, "A complementary palette (opposites that pop)", p => p.harmony == HarmonyRule.Complementary || p.harmony == HarmonyRule.SplitComplementary),
 
             new DesignBrief("gallery", "Gallery wall",
@@ -156,8 +156,8 @@ namespace PaletteRoom
                 6, "A monochrome palette (one hue, many shades)", p => p.harmony == HarmonyRule.Monochromatic),
 
             new DesignBrief("green-retreat", "Green retreat",
-                "Bring the outdoors in: three plants around a soft seat and a rug.",
-                new[] { (FurnitureKind.Plant, 3), (FurnitureKind.Armchair, 1), (FurnitureKind.Rug, 1) },
+                "Bring the outdoors in: three plants around a soft seat and a side table.",
+                new[] { (FurnitureKind.Plant, 3), (FurnitureKind.Armchair, 1), (FurnitureKind.SideTable, 1) },
                 7, "An analogous palette (neighbors on the wheel)", p => p.harmony == HarmonyRule.Analogous),
         };
 

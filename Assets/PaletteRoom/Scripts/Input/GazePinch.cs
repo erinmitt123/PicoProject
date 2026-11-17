@@ -11,8 +11,9 @@ namespace PaletteRoom
 {
     /// <summary>
     /// Look and pinch, the way PICO's spatial OS works: where the user looks is what a hand's pinch acts
-    /// on. Each tracked hand's far ray is moved off the hand and onto the eye gaze, with no ray drawn; a
-    /// small dot shows where the gaze rests on something pressable. While the pinch is held the ray is
+    /// on. Each tracked hand's far ray is moved off the hand and onto the eye gaze. Whenever it rests on
+    /// something pressable or grabbable (and while holding it), a ray is drawn from the hand to that spot,
+    /// with a small dot at the end. While the pinch is held the ray is
     /// handed back to the hand's motion (moving the hand swings the gaze ray around the head, about 1.6×),
     /// so sliders, scrolling and carrying furniture follow the hand, not the eyes.
     /// Needs eye tracking on the headset; without it (PICO 4 Ultra, or when turned off in Settings) the
@@ -54,6 +55,7 @@ namespace PaletteRoom
             public bool stabilization;
             public readonly List<CurveVisualController> visuals = new List<CurveVisualController>();
             public bool pressed;
+            public LineRenderer ray;
             public Vector3 headAtPress, handAtPress, originAtPress;
             public Quaternion rotationAtPress;
         }
@@ -158,10 +160,14 @@ namespace PaletteRoom
                 return;
             bool shown = false;
             foreach (var d in m_Driven.Values)
+                DrawRay(d);
+            foreach (var d in m_Driven.Values)
             {
                 if (d.interactor == null || !d.interactor.isActiveAndEnabled || d.pressed)
                     continue;
                 var type = d.interactor.TryGetCurveEndPoint(out var end);
+                if (shown)
+                    continue;
                 if (type == EndPointType.UI || type == EndPointType.ValidCastHit)
                 {
                     var toEye = m_Head.position - end;
@@ -173,6 +179,57 @@ namespace PaletteRoom
                 }
             }
             m_Cursor.gameObject.SetActive(shown);
+        }
+
+        /// <summary>
+        /// The ray from the hand to whatever the gaze is on, so it's always clear what a pinch will act on;
+        /// held while something is pressed or carried. Hidden when the gaze rests on nothing.
+        /// </summary>
+        void DrawRay(Driven d)
+        {
+            if (d.ray == null)
+                return;
+            bool on = false;
+            if (m_GazeValid && d.interactor != null && d.interactor.isActiveAndEnabled && d.handOrigin != null
+                && d.caster != null && d.caster.castOrigin == d.gazeOrigin)
+            {
+                var type = d.interactor.TryGetCurveEndPoint(out var end);
+                bool holding = d.interactor.hasSelection;
+                if (type == EndPointType.UI || type == EndPointType.ValidCastHit || type == EndPointType.AttachPoint || holding)
+                {
+                    if (holding && type != EndPointType.AttachPoint && type != EndPointType.ValidCastHit)
+                        end = d.interactor.interactablesSelected[0].transform.position;
+                    var start = d.handOrigin.position;
+                    d.ray.SetPosition(0, start);
+                    d.ray.SetPosition(1, Vector3.Lerp(start, end, 0.5f));
+                    d.ray.SetPosition(2, end);
+                    var c = d.pressed || holding ? new Color(0.55f, 0.85f, 1f) : Color.white;
+                    d.ray.startColor = new Color(c.r, c.g, c.b, 0.15f);
+                    d.ray.endColor = new Color(c.r, c.g, c.b, 0.9f);
+                    on = true;
+                }
+            }
+            d.ray.enabled = on;
+        }
+
+        LineRenderer NewRay(string name)
+        {
+            var go = new GameObject($"Gaze Ray ({name})");
+            go.transform.SetParent(transform, false);
+            var line = go.AddComponent<LineRenderer>();
+            line.positionCount = 3;
+            line.useWorldSpace = true;
+            line.widthMultiplier = 0.004f;
+            line.widthCurve = new AnimationCurve(new Keyframe(0f, 0.6f), new Keyframe(1f, 1f));
+            line.numCapVertices = 4;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            var mat = new Material(Shader.Find("UI/Default")) { name = "Gaze Ray" };
+            UIKit.MakeOverlay(mat);
+            mat.renderQueue = 3990;
+            line.sharedMaterial = mat;
+            line.enabled = false;
+            return line;
         }
 
         /// <summary>Reads the combined gaze into world space, smoothed so fixations hold still but saccades land.</summary>
@@ -222,6 +279,7 @@ namespace PaletteRoom
             d = new Driven { interactor = interactor, caster = caster, handOrigin = caster.castOrigin };
             d.gazeOrigin = new GameObject($"Gaze Origin ({interactor.name})").transform;
             d.gazeOrigin.SetParent(transform, false);
+            d.ray = NewRay(interactor.name);
             var group = interactor.transform.parent != null ? interactor.transform.parent : interactor.transform;
             foreach (var visual in group.GetComponentsInChildren<CurveVisualController>(true))
                 if (ReferenceEquals(visual.curveInteractionDataProvider, interactor))
@@ -255,6 +313,8 @@ namespace PaletteRoom
             foreach (var v in d.visuals)
                 if (v != null)
                     v.enabled = true;
+            if (d.ray != null)
+                d.ray.enabled = false;
         }
 
         void RestoreAll()

@@ -28,6 +28,7 @@ namespace PaletteRoom
             public Image dot;
             public TextMeshProUGUI count;
             public Button remove, add;
+            public RectTransform picture;
         }
 
         readonly List<Tile> m_Tiles = new List<Tile>();
@@ -79,7 +80,7 @@ namespace PaletteRoom
 
             var title = UIKit.Label(p, "Title", "Shopping list", 24f, UIKit.TextColor, style: FontStyles.Bold);
             UIKit.Place(title.rectTransform, Pad, Pad, width - 2 * Pad, 32f);
-            var sub = UIKit.Label(p, "Subtitle", "Pick a size and add it to your room. Drag the list to scroll; grab furniture to move it.",
+            var sub = UIKit.Label(p, "Subtitle", "Pinch a picture and drag it into your room, or press + to place it in front of you.",
                 11.5f, UIKit.MutedTextColor);
             UIKit.Place(sub.rectTransform, Pad, Pad + 34f, width - 2 * Pad, 16f);
 
@@ -122,8 +123,8 @@ namespace PaletteRoom
         }
 
         /// <summary>
-        /// Shows <paramref name="kind"/>'s category, and returns the + button of its usual size (for the tutorial
-        /// to point at), or null when the list is closed.
+        /// Shows <paramref name="kind"/>'s category, and returns the picture of its usual size (for the tutorial
+        /// to point at while teaching the drag), or null when the list is closed.
         /// </summary>
         public RectTransform FocusOn(FurnitureKind kind)
         {
@@ -135,7 +136,7 @@ namespace PaletteRoom
             foreach (var tile in m_Tiles)
             {
                 if (tile.entry.kind == kind && tile.variant.id == entry.Default.id)
-                    return (RectTransform)tile.add.transform;
+                    return tile.picture != null ? tile.picture : (RectTransform)tile.add.transform;
             }
             return null;
         }
@@ -188,6 +189,7 @@ namespace PaletteRoom
                 // Hold the picture to lift the piece out of the list and carry it into the room.
                 icon.raycastTarget = true;
                 icon.gameObject.AddComponent<TilePickUp>().PickedUp += hand => PickUpRequested?.Invoke(entry.kind, variant.id, hand);
+                tile.picture = icon.rectTransform;
             }
 
             // Role color in the corner: the palette slot this piece will take.

@@ -355,7 +355,7 @@ namespace PaletteRoom
             var added = new List<FurnitureItem>();
             foreach (var piece in entry.pieces)
             {
-                if (!Enum.TryParse(piece.kind, out FurnitureKind kind))
+                if (!Enum.TryParse(piece.kind, out FurnitureKind kind) || !FurnitureCatalog.Offered(kind))
                     continue;
                 var item = Factory.Create(kind, FurnitureCatalog.Get(kind).Variant(piece.variant), root);
                 if (piece.size > 0f)

@@ -30,8 +30,12 @@ namespace PaletteRoom
 
             // Group identical pieces (same kind, size and colors) so the list reads like a shopping list.
             var groups = new List<(string key, Lookbook.Piece piece, int count)>();
+            int total = 0;
             foreach (var piece in entry.pieces)
             {
+                if (Enum.TryParse(piece.kind, out FurnitureKind withdrawn) && !FurnitureCatalog.Offered(withdrawn))
+                    continue; // no longer sold
+                total++;
                 string key = piece.kind + "|" + piece.variant + "|" + ColorsKey(piece);
                 int i = groups.FindIndex(g => g.key == key);
                 if (i >= 0)
@@ -40,12 +44,12 @@ namespace PaletteRoom
                     groups.Add((key, piece, 1));
             }
 
-            sb.AppendLine($"PIECES ({entry.pieces.Count})");
+            sb.AppendLine($"PIECES ({total})");
             int n = 1;
             foreach (var (_, piece, count) in groups)
             {
                 string name = piece.kind, size = piece.variant, dims = "";
-                if (Enum.TryParse(piece.kind, out FurnitureKind kind))
+                if (Enum.TryParse(piece.kind, out FurnitureKind kind) && FurnitureCatalog.Offered(kind))
                 {
                     var catalog = FurnitureCatalog.Get(kind);
                     var variant = catalog.Variant(piece.variant);

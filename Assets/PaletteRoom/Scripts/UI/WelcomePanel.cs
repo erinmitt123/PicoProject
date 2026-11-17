@@ -434,8 +434,9 @@ namespace PaletteRoom
 
         void OnPrimaryPressed()
         {
+            // On a first visit the tour starts by itself once the floor and room scan are done.
             if (FirstVisit)
-                Enter(() => StartTutorialRequested?.Invoke());
+                Enter(() => StartMyRoomRequested?.Invoke());
             else if (SaveData.HasLastRoom)
                 Enter(() => ContinueRequested?.Invoke());
             else
@@ -445,10 +446,7 @@ namespace PaletteRoom
         void OnSecondaryPressed()
         {
             if (FirstVisit)
-            {
-                SaveData.TutorialSeen = true; // declined; it stays in the Palettes panel
-                Enter(() => StartMyRoomRequested?.Invoke());
-            }
+                Enter(() => StartSampleRoomRequested?.Invoke());
             else if (SaveData.HasLastRoom)
                 Enter(() => StartMyRoomRequested?.Invoke());
             else
@@ -601,7 +599,7 @@ namespace PaletteRoom
             if (first)
             {
                 m_PrimaryLabel.Localize("Get started");
-                m_SecondaryLabel.Localize("Skip the tour");
+                m_SecondaryLabel.Localize("Try a sample room");
             }
             else
             {

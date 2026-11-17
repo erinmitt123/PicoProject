@@ -9,7 +9,7 @@ namespace PaletteRoom
     {
         /// <summary>Follows the owning item's role (60-30-10 auto-apply).</summary>
         ItemRole,
-        /// <summary>Always uses a specific palette slot (e.g. a rug border in Neutral).</summary>
+        /// <summary>Always uses a specific palette slot (e.g. a pouf cover in Accent).</summary>
         Slot,
         /// <summary>Never repainted (e.g. wooden legs, metal frames, plant leaves).</summary>
         Fixed,

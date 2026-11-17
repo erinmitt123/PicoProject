@@ -8,13 +8,13 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 namespace PaletteRoom
 {
     /// <summary>
-    /// Press and hold a shopping-list icon to lift that piece out of the list and into your hand; keep
-    /// holding to carry it into the room and let go to set it down. A quick swipe still scrolls the list:
-    /// pick-up only happens after a short, steady hold.
+    /// Pinch a shopping-list picture and drag it out into the room: the piece lifts out of the list into
+    /// your hand, follows it, and is set down where you let go. A short steady hold lifts it too. Only a
+    /// mostly up-and-down swipe scrolls the list.
     /// </summary>
     public class TilePickUp : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
     {
-        const float HoldSeconds = 0.32f;
+        const float HoldSeconds = 0.25f;
         const float MaxWobblePixels = 18f;
 
         /// <summary>Raised when a hold completes: the piece to lift, and the interactor that should carry it (null for the mouse).</summary>
@@ -40,22 +40,34 @@ namespace PaletteRoom
 
         public void OnPointerExit(PointerEventData eventData)
         {
-            if (!m_Lifted)
+            if (m_Lifted || m_Press == null)
+                return;
+            // Dragged off the picture: lift it, unless it was an up-and-down swipe (a scroll).
+            var moved = m_Press.position - m_PressedAtScreen;
+            if (Mathf.Abs(moved.y) > 1.5f * Mathf.Abs(moved.x))
                 m_Press = null;
+            else
+                Lift();
         }
 
         void Update()
         {
             if (m_Press == null || m_Lifted)
                 return;
-            if ((m_Press.position - m_PressedAtScreen).sqrMagnitude > MaxWobblePixels * MaxWobblePixels)
+            var moved = m_Press.position - m_PressedAtScreen;
+            bool dragged = moved.sqrMagnitude > MaxWobblePixels * MaxWobblePixels;
+            if (dragged && Mathf.Abs(moved.y) > 1.5f * Mathf.Abs(moved.x) && Time.unscaledTime - m_PressedAt < HoldSeconds)
             {
-                m_Press = null; // it's a scroll, not a pick-up
+                m_Press = null; // a quick up-and-down swipe: it's a scroll, not a pick-up
                 return;
             }
-            if (Time.unscaledTime - m_PressedAt < HoldSeconds)
+            if (!dragged && Time.unscaledTime - m_PressedAt < HoldSeconds)
                 return;
+            Lift();
+        }
 
+        void Lift()
+        {
             m_Lifted = true;
             // Stop the list scrolling while the piece is carried away.
             if (m_Scroll != null)

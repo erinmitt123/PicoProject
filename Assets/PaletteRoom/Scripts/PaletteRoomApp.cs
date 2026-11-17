@@ -682,6 +682,16 @@ namespace PaletteRoom
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
             m_DockPanel.PlaceIfNeeded();
+            StartTutorialIfNew();
+        }
+
+        /// <summary>The first time into a room (after the floor and room scan), the short tour starts by itself; it can be skipped.</summary>
+        bool StartTutorialIfNew()
+        {
+            if (SaveData.TutorialSeen || (TestModeActive && autoStartSampleRoom))
+                return false;
+            StartTutorial();
+            return true;
         }
 
         /// <summary>The user's own room as it is: nothing is placed, the dock opens and pieces come from the shopping list.</summary>
@@ -691,6 +701,8 @@ namespace PaletteRoom
             welcomePanel.Hide();
             paletteDock.gameObject.SetActive(true);
             m_DockPanel.PlaceIfNeeded();
+            if (StartTutorialIfNew())
+                return; // the tour comes first; the room-color match would cover it
             // A fresh room: read its real colors and suggest the palette that suits them best.
             if (!TestModeActive)
             {
@@ -761,6 +773,8 @@ namespace PaletteRoom
         // list then turns into a scroll and is lost. About 3 cm on a panel at arm's length.
         const float PinchDragThreshold = 6f;
         const float PokeDepth = 0.03f, NearGrabRadius = 0.03f;
+        /// <summary>Far enough to reach anything in a large room (the rig's default is 10 m).</summary>
+        const float FarReach = 30f;
 
         /// <summary>
         /// A poke or near grab in range takes over from the hand's ray and drops any press it was making.
@@ -775,6 +789,11 @@ namespace PaletteRoom
             {
                 if (nearFar.nearInteractionCaster is SphereInteractionCaster near)
                     near.castRadius = NearGrabRadius;
+                // Point at a piece anywhere in the room and grab it.
+                if (nearFar.farInteractionCaster is CurveInteractionCaster far)
+                    far.castDistance = FarReach;
+                foreach (var visual in nearFar.transform.parent.GetComponentsInChildren<UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals.CurveVisualController>(true))
+                    visual.maxVisualCurveDistance = FarReach;
             }
         }
     }

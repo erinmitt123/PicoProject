@@ -6,7 +6,7 @@ namespace PaletteRoom
     /// <summary>
     /// The sample room's initial layout, fitted to the scanned room with common interior-design spacing:
     /// the sofa backs onto a solid wall with art hung above it, the coffee table sits 40 cm in front of
-    /// the sofa on a rug that catches the sofa's front legs, a side table and lamp flank the sofa, an
+    /// the sofa, a side table and lamp flank the sofa, an
     /// armchair angles in at the end of the coffee table, and the bookshelf and plant share out the rest
     /// of the wall with walkways of at least 76 cm. If something doesn't fit, smaller sizes are tried and
     /// then the least important pieces are left out.
@@ -18,7 +18,6 @@ namespace PaletteRoom
         const float SofaToCoffeeTable = 0.40f; // 14–18 in
         const float SideTableToSofa = 0.07f;   // 2–4 in
         const float Walkway = 0.76f;           // 30 in minimum; 36 in when there's room
-        const float RugUnderSofa = 0.25f;      // front legs on the rug
         const float ArtAboveFurniture = 0.22f; // 8–10 in from the furniture's top to the frame
         const float ArtCentreHeight = 1.45f;   // 57 in, when nothing is below the art
         const float MaxWallDistance = 5.5f;
@@ -331,7 +330,7 @@ namespace PaletteRoom
             return FurnitureItem.Overlap(footprints, user);
         }
 
-        /// <summary>Not through a wall or real furniture (for pieces that don't block the floor, such as rugs).</summary>
+        /// <summary>Not through a wall or real furniture (for pieces that don't block the floor).</summary>
         bool ClearOfRoom(Footprint[] footprints)
         {
             if (sceneObstacles == null)
@@ -339,7 +338,7 @@ namespace PaletteRoom
             foreach (var wall in sceneObstacles.Walls)
                 if (FurnitureItem.Overlap(footprints, new[] { wall }))
                     return false;
-            // A rug lies flat, but it isn't laid under a real bed or among a real table's legs.
+            // A flat piece isn't laid under a real bed or among a real table's legs.
             return WhatRealBlocks(footprints, 0.5f) == null;
         }
 
@@ -380,15 +379,13 @@ namespace PaletteRoom
             float userX = Vector3.Dot(head.position - f.origin, f.along);
             float wallMin = -f.halfLength, wallMax = f.halfLength;
 
-            // 1–3. The core group — sofa against the wall, coffee table 40 cm in front, rug under both —
-            //      slides along the wall (from in front of the user outward) to the first spot where it
-            //      all fits; larger sizes are tried first. A spot without room for the rug is a fallback.
-            if (!PlaceCoreGroup(root, f, userX, floorY, out var sofa, out var table, out var rug))
+            // 1–3. The core group — sofa against the wall, coffee table 40 cm in front — slides along the
+            //      wall (from in front of the user outward) to the first spot where it all fits; larger
+            //      sizes are tried first.
+            if (!PlaceCoreGroup(root, f, userX, floorY, out var sofa, out var table))
                 return null;
             placed.Add(sofa);
             placed.Add(table);
-            if (rug != null)
-                placed.Add(rug);
             var sofaBox = LocalBox(sofa);
             var tableBox = LocalBox(table);
             float sofaX = Vector3.Dot(sofa.transform.position - f.origin, f.along);
@@ -441,7 +438,7 @@ namespace PaletteRoom
             foreach (var item in placed)
             {
                 float depth = Vector3.Dot(item.transform.position - f.origin, f.inward);
-                if (depth > 1f || item.Kind == FurnitureKind.Rug)
+                if (depth > 1f)
                     continue; // out in the room (armchair, table), not taking up wall
                 var b = LocalBox(item);
                 float c = Vector3.Dot(item.transform.position - f.origin, f.along);
@@ -510,9 +507,9 @@ namespace PaletteRoom
             }
         }
 
-        bool PlaceCoreGroup(Transform root, Frame f, float userX, float floorY, out FurnitureItem sofa, out FurnitureItem table, out FurnitureItem rug)
+        bool PlaceCoreGroup(Transform root, Frame f, float userX, float floorY, out FurnitureItem sofa, out FurnitureItem table)
         {
-            sofa = table = rug = null;
+            sofa = table = null;
             foreach (var sofaSize in new[] { "three", "loveseat" })
             foreach (var tableSize in new[] { "medium", "small" })
             {
@@ -522,7 +519,6 @@ namespace PaletteRoom
                 float half = sofaBox.extents.x;
                 float sofaFront = SofaToWall + sofaBox.size.z;
                 float lo = -f.halfLength + half, hi = f.halfLength - half;
-                float fallbackX = float.NaN;
                 for (float d = 0f; d <= f.halfLength * 2f; d += 0.1f)
                 {
                     foreach (float sign in new[] { 1f, -1f })
@@ -532,40 +528,17 @@ namespace PaletteRoom
                             continue;
                         if (Put(s, f, x, SofaToWall, floorY) && Put(t, f, x, sofaFront + SofaToCoffeeTable, floorY))
                         {
-                            var r = PlaceRug(root, f, x, sofaFront, floorY);
-                            if (r != null)
-                            {
-                                sofa = s; table = t; rug = r;
-                                return true;
-                            }
-                            if (float.IsNaN(fallbackX))
-                                fallbackX = x;
+                            sofa = s; table = t;
+                            return true;
                         }
                         if (d == 0f)
                             break;
                     }
                 }
-                if (!float.IsNaN(fallbackX) && Put(s, f, fallbackX, SofaToWall, floorY) && Put(t, f, fallbackX, sofaFront + SofaToCoffeeTable, floorY))
-                {
-                    sofa = s; table = t;
-                    return true;
-                }
                 Discard(s);
                 Discard(t);
             }
             return false;
-        }
-
-        FurnitureItem PlaceRug(Transform root, Frame f, float x, float sofaFront, float floorY)
-        {
-            foreach (var size in new[] { "5x8", "4x6" })
-            {
-                var rug = Make(root, FurnitureKind.Rug, size);
-                if (Put(rug, f, x, sofaFront - RugUnderSofa, floorY))
-                    return rug;
-                Discard(rug);
-            }
-            return null;
         }
 
         /// <summary>Puts a wall piece (bookshelf, plant) against another solid wall, centred in its free length.</summary>

@@ -88,7 +88,7 @@ namespace PaletteRoom
         /// <summary>A format argument worked out again whenever the label renders (so it follows a language change).</summary>
         public static LazyArg Lazy(Func<string> text) => new LazyArg(text);
 
-        /// <summary>Translated items joined into a list: "sofa, rug" / "沙发、地毯".</summary>
+        /// <summary>Translated items joined into a list: "sofa, lamp" / "沙发、落地灯".</summary>
         public static string Join(IEnumerable<string> english)
         {
             var parts = new List<string>();

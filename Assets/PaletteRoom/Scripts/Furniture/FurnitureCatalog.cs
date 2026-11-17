@@ -6,7 +6,7 @@ namespace PaletteRoom
     /// <summary>
     /// One size option of a catalog piece. Code-built pieces read <see cref="size"/> / <see cref="seats"/> /
     /// <see cref="cells"/>; scanned pieces are scaled by <see cref="scale"/> relative to their prefab.
-    /// Sizes follow common retail dimensions (sofas, coffee tables, rugs) and ISO paper sizes (prints).
+    /// Sizes follow common retail dimensions (sofas, coffee tables) and ISO paper sizes (prints).
     /// </summary>
     public readonly struct FurnitureVariant
     {
@@ -82,10 +82,6 @@ namespace PaletteRoom
                 new FurnitureVariant("loveseat", "Loveseat", "2-seat · 160 cm", new Vector3(1.6f, 0.9f, 0.88f), seats: 2),
                 new FurnitureVariant("three", "3-seat", "215 cm", new Vector3(2.15f, 0.9f, 0.88f), seats: 3),
                 new FurnitureVariant("chaise", "3-seat + chaise", "215 × 160 cm", new Vector3(2.15f, 0.9f, 1.6f), seats: 3, chaise: true)),
-            new Entry(FurnitureKind.Rug, "Rug", "Rugs", FurnitureRole.Dominant, 1,
-                new FurnitureVariant("4x6", "4 × 6 ft", "122 × 183 cm", new Vector3(1.83f, 0.014f, 1.22f)),
-                new FurnitureVariant("5x8", "5 × 8 ft", "152 × 244 cm", new Vector3(2.44f, 0.014f, 1.52f)),
-                new FurnitureVariant("8x10", "8 × 10 ft", "244 × 305 cm", new Vector3(3.05f, 0.014f, 2.44f))),
             new Entry(FurnitureKind.Armchair, "Armchair", "Armchairs", FurnitureRole.Secondary, 0,
                 new FurnitureVariant("standard", "Lounge", "82 × 99 cm")),
             new Entry(FurnitureKind.CoffeeTable, "Coffee Table", "Coffee tables", FurnitureRole.Secondary, 1,
@@ -207,7 +203,7 @@ namespace PaletteRoom
         /// <summary>
         /// How far a piece may be resized, relative to its catalog size, so it stays something you could
         /// actually buy and use. Seats and tables are held close to standard heights (seat 40–48 cm,
-        /// dining and desk tops 71–79 cm, coffee tables 35–48 cm); storage, rugs and decor vary more.
+        /// dining and desk tops 71–79 cm, coffee tables 35–48 cm); storage and decor vary more.
         /// </summary>
         public static (float min, float max) SizeRange(FurnitureKind kind)
         {
@@ -258,8 +254,6 @@ namespace PaletteRoom
                     return (0.8f, 1.25f);
 
                 // Soft goods and decor.
-                case FurnitureKind.Rug:
-                    return (0.75f, 1.25f);
                 case FurnitureKind.ThrowPillow:
                     return (0.85f, 1.15f);
                 case FurnitureKind.ThrowBlanket:
@@ -284,6 +278,17 @@ namespace PaletteRoom
                 default:
                     return (0.9f, 1.1f);
             }
+        }
+
+        /// <summary>Whether <paramref name="kind"/> is still sold. Saved rooms may hold pieces that were withdrawn; those are left out.</summary>
+        public static bool Offered(FurnitureKind kind)
+        {
+            foreach (var e in Home)
+            {
+                if (e.kind == kind)
+                    return true;
+            }
+            return false;
         }
 
         public static Entry Get(FurnitureKind kind)
